@@ -48,7 +48,7 @@ def validate_assignment(con, uid):
 
 
 def validate_documents(con, cid, data):
-    for evidence in [*[f.evidence for f in data.voting_facts], *[f.evidence for f in data.family_facts], *[d.evidence for d in data.decisions]]:
+    for evidence in [*[f.evidence for f in data.voting_facts], *[f.evidence for f in data.family_facts], *[f.evidence for f in data.control_facts], *[f.evidence for f in data.management_facts], *[d.evidence for d in data.decisions]]:
         if evidence.document_id and not con.execute('SELECT id FROM tao_documents WHERE id=? AND case_id=?', (evidence.document_id, cid)).fetchone():
             raise HTTPException(422, 'A bizonyíték dokumentuma nem ehhez a Tao-vizsgálathoz tartozik.')
 
@@ -214,6 +214,8 @@ def build_router(user, staff, reviewer):
                     decision.confirmed = False
                 for family in data.family_facts:
                     family.confirmed = False
+                for fact in [*data.control_facts, *data.management_facts]:
+                    fact.confirmed = False
                 for company in data.companies:
                     company.registry_reviewed_on = None
                 version, calc = advance(con, case, data, u['id'])

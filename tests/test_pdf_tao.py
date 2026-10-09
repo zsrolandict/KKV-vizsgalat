@@ -186,6 +186,30 @@ class PDFAPITests(unittest.TestCase):
         rejected=self.client.put('/api/tao/cases/'+cid,json={'data':current['data'],'version':current['version']},headers=self.h)
         self.assertEqual(rejected.status_code,422)
 
+    def test_control_documents_recheck_and_source_scope(self):
+        from tests.test_tao_control import assessment, right, management
+        raw=assessment([right()], [management()]).model_dump(mode='json')
+        created=self.client.post('/api/tao/cases',json={'data':raw},headers=self.h)
+        self.assertEqual(created.status_code,200,created.text);cid=created.json()['id']
+        uploaded=self.client.post(f'/api/tao/cases/{cid}/documents',files={'file':('iranyitas.txt',b'Control evidence','text/plain')},headers=self.h)
+        self.assertEqual(uploaded.status_code,200,uploaded.text)
+        current=self.client.get('/api/tao/cases/'+cid).json()
+        self.assertFalse(current['data']['control_facts'][0]['confirmed'])
+        self.assertFalse(current['data']['management_facts'][0]['confirmed'])
+        previous=self.client.get(f'/api/tao/cases/{cid}/versions/1').json()
+        self.assertTrue(previous['data']['control_facts'][0]['confirmed'])
+        self.assertTrue(previous['data']['management_facts'][0]['confirmed'])
+        for field in ['control_facts','management_facts']:
+            changed=copy.deepcopy(current['data'])
+            changed[field][0]['evidence']['document_id']='foreign-document'
+            rejected=self.client.put('/api/tao/cases/'+cid,json={'data':changed,'version':current['version']},headers=self.h)
+            self.assertEqual(rejected.status_code,422)
+        for field in ['control_facts','management_facts']:
+            current['data'][field][0]['confirmed']=True
+            current['data'][field][0]['evidence']['document_id']=uploaded.json()['id']
+        updated=self.client.put('/api/tao/cases/'+cid,json={'data':current['data'],'version':current['version']},headers=self.h)
+        self.assertEqual(updated.status_code,200,updated.text)
+
     def test_partial_tao_approval_and_immutable_snapshot(self):
         d=tao().model_dump(mode='json');d.update(scope='A és B, nyilatkozat nélkül',law_date='2024-12-31',law_source='Szakértői jogforrás')
         cid=self.client.post('/api/tao/cases',json={'data':d},headers=self.h).json()['id']

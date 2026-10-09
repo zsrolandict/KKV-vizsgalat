@@ -123,6 +123,71 @@ class FamilyFact(Model):
         return self
 
 
+CONTROL_LABELS = {
+    'appointments': 'Vezető tisztségviselők / felügyelőbizottság többségének megválasztási vagy visszahívási joga',
+    'voting_agreement': 'Más tagokkal kötött szavazási megállapodás',
+}
+
+
+class ControlFact(Model):
+    id: str = Field(min_length=1, max_length=80)
+    owner: str
+    company: str
+    kind: Literal['appointments', 'voting_agreement']
+    membership: Literal['unknown', 'member', 'not_member'] = 'unknown'
+    condition: Literal['unknown', 'yes', 'no'] = 'unknown'
+    aligned_bound: Literal['exact', 'over_half'] = 'exact'
+    aligned_votes: Decimal | None = Field(default=None, ge=0, le=100, max_digits=16, decimal_places=10)
+    valid_from: date | None = None
+    valid_to: date | None = None
+    reviewed_as_of: date | None = None
+    reason: str = Field(default='', max_length=4000)
+    evidence: Evidence = Field(default_factory=Evidence)
+    confirmed: bool = False
+
+    @model_validator(mode='after')
+    def validate_control(self):
+        if self.owner == self.company:
+            raise ValueError('Két külön szereplő szükséges.')
+        if self.valid_from and self.valid_to and self.valid_to <= self.valid_from:
+            raise ValueError('A kizáró végdátumnak a kezdőnap után kell lennie.')
+        if self.aligned_bound == 'over_half' and self.aligned_votes is not None:
+            raise ValueError('Az 50% feletti megállapodási jelzéshez nem adható pontos százalék.')
+        if self.kind == 'appointments' and (self.aligned_votes is not None or self.aligned_bound != 'exact'):
+            raise ValueError('Megválasztási joghoz nem adható meg összehangolt szavazati százalék.')
+        if self.confirmed and not (self.evidence.source.strip() and self.reason.strip()):
+            raise ValueError('Igazolt irányítási tényhez forrás és indok szükséges.')
+        return self
+
+
+class ManagementFact(Model):
+    id: str = Field(min_length=1, max_length=80)
+    first: str
+    second: str
+    managers: list[str] = Field(min_length=1, max_length=30)
+    common_management: Literal['unknown', 'yes', 'no'] = 'unknown'
+    business_control: Literal['unknown', 'yes', 'no'] = 'unknown'
+    financial_control: Literal['unknown', 'yes', 'no'] = 'unknown'
+    valid_from: date | None = None
+    valid_to: date | None = None
+    reviewed_as_of: date | None = None
+    reason: str = Field(default='', max_length=4000)
+    evidence: Evidence = Field(default_factory=Evidence)
+    confirmed: bool = False
+
+    @model_validator(mode='after')
+    def validate_management(self):
+        if self.first == self.second:
+            raise ValueError('Két külön vállalkozás szükséges.')
+        if len(self.managers) != len(set(self.managers)):
+            raise ValueError('A közös vezető nem ismétlődhet.')
+        if self.valid_from and self.valid_to and self.valid_to <= self.valid_from:
+            raise ValueError('A kizáró végdátumnak a kezdőnap után kell lennie.')
+        if self.confirmed and not (self.evidence.source.strip() and self.reason.strip()):
+            raise ValueError('Igazolt ügyvezetési tényhez forrás és indok szükséges.')
+        return self
+
+
 class TaoAssessment(Model):
     schema_version: Literal[1] = 1
     title: str = Field(min_length=1, max_length=200)
@@ -137,6 +202,8 @@ class TaoAssessment(Model):
     persons: list[Person] = Field(default_factory=list, max_length=250)
     voting_facts: list[VotingFact] = Field(default_factory=list, max_length=2000)
     family_facts: list[FamilyFact] = Field(default_factory=list, max_length=1000)
+    control_facts: list[ControlFact] = Field(default_factory=list, max_length=1000)
+    management_facts: list[ManagementFact] = Field(default_factory=list, max_length=1000)
     decisions: list[PairDecision] = Field(default_factory=list, max_length=1770)
 
     @model_validator(mode='after')
@@ -156,6 +223,15 @@ class TaoAssessment(Model):
         for fact in self.family_facts:
             if fact.first not in person_ids or fact.second not in person_ids:
                 raise ValueError('Rokonság csak rögzített természetes személyek között adható meg.')
+        for collection in (self.control_facts, self.management_facts):
+            if len({f.id for f in collection}) != len(collection):
+                raise ValueError('Ismétlődő irányítási tényazonosító.')
+        for fact in self.control_facts:
+            if fact.owner not in ids or fact.company not in cids:
+                raise ValueError('Az irányítási jog ismeretlen szereplőre mutat.')
+        for fact in self.management_facts:
+            if fact.first not in cids or fact.second not in cids or any(m not in ids for m in fact.managers):
+                raise ValueError('Az ügyvezetési tény ismeretlen szereplőre mutat.')
         keys = []
         for decision in self.decisions:
             if decision.first not in cids or decision.second not in cids:

@@ -4,14 +4,16 @@ from itertools import combinations
 from .tao_influence import influence_graph
 from .tao_family import family_groups
 from .tao_models import CLOSE_FAMILY_TYPES
+from .tao_control import control_paths, management_signals, current_or_pending
 
-RULE_VERSION = 'TAO-munkafolyamat-1.2-igazolt-rokonsag'
+RULE_VERSION = 'TAO-munkafolyamat-1.3-iranyitas'
 RESULT_LABELS = {'related': 'Kapcsolt', 'not_related': 'Nem kapcsolt', 'undetermined': 'Nem dönthető el'}
 STAGE_LABELS = {
     'unreviewed': 'Iratellenőrzésre vár',
     'awaiting_declaration': 'Nyilatkozatra vár',
     'missing_data': 'Hiányzó adat',
-    'management_review': 'Közös vezetés – irányítás tisztázandó',
+    'management_review': 'Ügyvezetés – irányítás tisztázandó',
+    'control_signal': 'Igazolt irányítási jelzés',
     'voting_signal': 'Többségi szavazati jelzés',
     'expert_draft': 'Szakértői döntés megerősítésre vár',
     'expert': 'Szakértői döntés',
@@ -61,6 +63,8 @@ def calculate(data):
     families, family_limited, family_conflicts = family_groups(data, active)
     family_graph = influence_graph(chosen, conflicts, list(names), [c.id for c in data.companies], names,
                                    effective_vote, sources={f['id']: set(f['members']) for f in families}) if families else {}
+    rights_paths, rights_pending = control_paths(data, graph, active)
+    rights_by_id = {f.id: f for f in data.control_facts}
     facts_by_id = {f.id: f for f in chosen.values()}
     rows = []
     for a, b in combinations(data.companies, 2):
@@ -91,6 +95,37 @@ def calculate(data):
                     signals.append(f'{kind} szavazati befolyás: {names[owner]} → {names[target]}: {value.label} (Ptk. 8:2. §).')
             if owner not in (a.id, b.id) and all(target in related_values and related_values[target].majority for target in (a.id, b.id)):
                 signals.append(f'Közös közvetlen/közvetett többségi szavazati szereplő: {names[owner]} (Ptk. 8:2. §; Tao. 4. § 23. pont c)).')
+        control_evidence = {f.id for f in data.control_facts if f.company in (a.id, b.id) and current_or_pending(f, data.as_of)}
+        control_calculations, control_signals = [], []
+        for owner in names:
+            has_control = {}
+            for target in (a.id, b.id):
+                if owner == target:
+                    continue
+                path = rights_paths.get((owner, target))
+                value, _, errors = graph[(owner, target)]
+                has_control[target] = bool(path or (value and value.majority and not errors))
+                if path:
+                    control_evidence.update(path['controls'])
+                    dependencies.update(path['votes'])
+                    control_calculations.append({'owner': owner, 'company': target, 'route': path['route'],
+                                                 'control_ids': sorted(path['controls']), 'fact_ids': sorted(path['votes']),
+                                                 'basis': 'Ptk. 8:2. § (1)–(3); Tao. 4. § 23. a)–c)'})
+                    if owner in (a.id, b.id):
+                        control_signals.append(f'Igazolt meghatározó befolyás: {" → ".join(names[x] for x in path["route"])} (Ptk. 8:2. §).')
+            if owner not in (a.id, b.id) and all(has_control.get(target) for target in (a.id, b.id)) and any((owner, target) in rights_paths for target in (a.id, b.id)):
+                control_signals.append(f'Közös többségi/meghatározó befolyással rendelkező szereplő: {names[owner]} (Tao. 4. § 23. c)).')
+        for fact, message in rights_pending:
+            relevant = fact.company in (a.id, b.id) or any(
+                (fact.company, target) in rights_paths or (fact.company != target and graph[(fact.company, target)][1])
+                for target in (a.id, b.id))
+            if relevant:
+                control_evidence.add(fact.id)
+                missing.append(f'{names[fact.owner]} → {names[fact.company]}: {message}')
+        management, management_missing, management_evidence = management_signals(data, a.id, b.id, active)
+        control_signals.extend(management)
+        signals.extend(control_signals)
+        missing.extend(management_missing)
         family_evidence = []
         for group in families:
             family_values, family_used, errors = {}, set(), []
@@ -143,8 +178,12 @@ def calculate(data):
             stage = 'expert' if result != 'undetermined' else d.stage
         elif d and d.result != 'undetermined':
             stage = 'expert_draft'
+        elif control_signals:
+            stage = 'control_signal'
         elif signals:
             stage = 'voting_signal'
+        elif management_missing and all(message in management_missing for message in missing):
+            stage = 'management_review'
         elif missing:
             stage = 'missing_data'
         elif d and d.stage != 'unreviewed':
@@ -155,11 +194,11 @@ def calculate(data):
             stage = 'unreviewed'
         # A manual waiting label must never hide a concrete missing fact.
         if result == 'undetermined' and stage == 'awaiting_declaration' and (missing or signals):
-            stage = 'voting_signal' if signals else 'missing_data'
+            stage = 'control_signal' if control_signals else 'voting_signal' if signals else 'missing_data'
         explanation = d.reason if d and d.reason else (
             'A feldolgozott cégjegyzéki adatokban kapcsoltságra utaló jel nem látható; célzott nyilatkozat szükséges.'
             if stage == 'awaiting_declaration' else
-            'A jelzett szavazati adat jogi értékelése szakértői döntést igényel.' if signals else
+            'A jelzett szavazati vagy irányítási tény jogi értékelése szakértői döntést igényel.' if signals else
             'Az iratok és a releváns jogalapok ellenőrzése szükséges.')
         assumptions = list(dict.fromkeys([
             *(f'{names[f["owner"]]} → {names[f["company"]]}: tulajdon = szavazat munkafeltételezés.' for f in used if f['vote_mode'] == 'ownership_default'),
@@ -171,7 +210,9 @@ def calculate(data):
             'basis': d.basis if d else '', 'reason': explanation,
             'evidence': d.evidence.model_dump(mode='json') if d else {},
             'signals': signals, 'missing': [*missing, *([d.missing] if d and d.missing else [])],
-            'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'family_facts': list({f['id']: f for f in family_evidence}.values()), 'confirmed': bool(d and d.confirmed),
+            'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'family_facts': list({f['id']: f for f in family_evidence}.values()),
+            'control_facts': [rights_by_id[fid].model_dump(mode='json') for fid in sorted(control_evidence)],
+            'management_facts': management_evidence, 'control_calculations': control_calculations, 'confirmed': bool(d and d.confirmed),
         })
     counts = {value: sum(r['result'] == value for r in rows) for value in RESULT_LABELS}
     stages = {value: sum(r['stage'] == value for r in rows) for value in STAGE_LABELS}
@@ -180,4 +221,4 @@ def calculate(data):
             'complete': counts['undetermined'] == 0,
             'law_profile_present': bool(data.law_date and data.law_source),
             'mode': 'expert_decisions',
-            'note': 'A közvetlen és közvetett szavazati jelzések Ptk. 8:2. § szerinti számítások; a teljes Tao-jogi eredményt a szakértő rögzíti.'}
+            'note': 'A szavazati és igazolt irányítási tények kapcsoltsági jelzést adnak; a teljes Tao-jogi eredményt a szakértő rögzíti.'}

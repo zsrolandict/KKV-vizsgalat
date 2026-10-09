@@ -7,8 +7,12 @@ from docx.shared import Cm, Pt, RGBColor
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from .tao_models import FAMILY_LABELS
+from .tao_models import FAMILY_LABELS, CONTROL_LABELS
 from .tao_engine import RESULT_LABELS
+
+
+ANSWER_LABELS = {'yes': 'Igen', 'no': 'Nem', 'unknown': 'Tisztázandó'}
+MEMBERSHIP_LABELS = {'member': 'Tag / részvényes', 'not_member': 'Nem tag / részvényes', 'unknown': 'Tisztázandó'}
 
 
 def evidence_text(evidence):
@@ -32,7 +36,7 @@ def xlsx_report(data, calc, meta):
     matrix.append(['Vizsgálat', data.title])
     matrix.append(['Vizsgálati nap', data.as_of.isoformat()])
     matrix.append(['Állapot', meta['label']])
-    matrix.append(['Értékelés', 'Szakértői döntések; a szavazati jelzés nem automatikus jogi minősítés.'])
+    matrix.append(['Értékelés', 'Szakértői döntések; a szavazati és irányítási jelzések nem végleges jogi minősítések.'])
     matrix.append([])
     matrix.append(['Vállalkozás', *[c.name for c in data.companies]])
     lookup = {frozenset((r['first'], r['second'])): r for r in calc['rows']}
@@ -40,7 +44,7 @@ def xlsx_report(data, calc, meta):
         matrix.append([a.name, *['—' if a.id == b.id else lookup[frozenset((a.id, b.id))]['label'] for b in data.companies]])
     matrix.freeze_panes = 'B7'
     details = wb.create_sheet('Indokolások')
-    details.append(['Cég A', 'Cég B', 'Jogi eredmény', 'Munkafolyamat', 'Jogalap', 'Indok', 'Forrás / oldal', 'Feltételezés', 'Hiányzó adat', 'Szavazati jelzés'])
+    details.append(['Cég A', 'Cég B', 'Jogi eredmény', 'Munkafolyamat', 'Jogalap', 'Indok', 'Forrás / oldal', 'Feltételezés', 'Hiányzó adat', 'Kapcsoltsági jelzés'])
     for row in calc['rows']:
         details.append([row['first_name'], row['second_name'], row['label'], row['stage_label'], row['basis'], row['reason'],
                         evidence_text(row['evidence']), '\n'.join(row['assumptions']), '\n'.join(row['missing']), '\n'.join(row['signals'])])
@@ -67,6 +71,27 @@ def xlsx_report(data, calc, meta):
         relatives.append([names[fact.first], names[fact.second], FAMILY_LABELS[fact.relationship],
                           fact.valid_from, fact.valid_to, fact.reviewed_as_of,
                           'Igen' if fact.confirmed else 'Nem', evidence_text(fact.evidence.model_dump(mode='json')), fact.id])
+    rights = wb.create_sheet('Irányítási jogok')
+    rights.append(['Jogosult', 'Célcég', 'Jogcím', 'Tagi jogállás', 'Feltétel fennáll', 'Együttes szavazat (%)', 'Igazolt', 'Indok', 'Forrás / oldal', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Tényazonosító'])
+    for fact in data.control_facts:
+        rights.append([names[fact.owner], names[fact.company], CONTROL_LABELS[fact.kind], MEMBERSHIP_LABELS[fact.membership],
+                       ANSWER_LABELS[fact.condition], '>50%' if fact.aligned_bound == 'over_half' else fact.aligned_votes, 'Igen' if fact.confirmed else 'Nem', fact.reason,
+                       evidence_text(fact.evidence.model_dump(mode='json')), fact.valid_from, fact.valid_to,
+                       fact.reviewed_as_of, fact.id])
+    managers = wb.create_sheet('Ügyvezetési tények')
+    managers.append(['Cég A', 'Cég B', 'Közös vezetők', 'Egyezőség', 'Üzleti döntő befolyás', 'Pénzügyi döntő befolyás', 'Igazolt', 'Indok', 'Forrás / oldal', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Tényazonosító'])
+    for fact in data.management_facts:
+        managers.append([names[fact.first], names[fact.second], ', '.join(names[m] for m in fact.managers),
+                         ANSWER_LABELS[fact.common_management], ANSWER_LABELS[fact.business_control], ANSWER_LABELS[fact.financial_control],
+                         'Igen' if fact.confirmed else 'Nem', fact.reason, evidence_text(fact.evidence.model_dump(mode='json')),
+                         fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.id])
+    routes = wb.create_sheet('Irányítási útvonalak')
+    routes.append(['Cég A', 'Cég B', 'Jogosult', 'Célcég', 'Útvonal', 'Jogalap', 'Irányítási tények', 'Szavazati tények'])
+    for row in calc['rows']:
+        for route in row.get('control_calculations', []):
+            routes.append([row['first_name'], row['second_name'], names[route['owner']], names[route['company']],
+                           ' → '.join(names[n] for n in route['route']), route['basis'],
+                           ', '.join(route['control_ids']), ', '.join(route['fact_ids'])])
     profile = wb.create_sheet('Vizsgálati keret')
     for key, value in [('Ügyazonosító', meta['id']), ('Verzió', meta['version']), ('Állapot', meta['label']),
                        ('Vizsgálati cél', data.purpose), ('Vállalt vizsgálati kör', data.scope),
@@ -136,7 +161,18 @@ def word_report(data, calc, meta):
             doc.add_paragraph(f"Befolyásszámítás: {value.get('owner_name') or actor_names[value['owner']]} → {actor_names[value['company']]}: {value['value']} · {value['basis']} · Tények: {', '.join(value['fact_ids'])}")
         for fact in row.get('family_facts', []):
             doc.add_paragraph(f"Igazolt rokonság: {actor_names[fact['first']]} – {actor_names[fact['second']]} · {FAMILY_LABELS[fact['relationship']]} · {evidence_text(fact['evidence'])}")
-        for label, values in (('Szavazati jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
+        for route in row.get('control_calculations', []):
+            doc.add_paragraph('Meghatározó befolyás útvonala: ' + ' → '.join(actor_names[n] for n in route['route']) + ' · ' + route['basis'])
+        for fact in row.get('control_facts', []):
+            doc.add_paragraph(f"Irányítási tény: {actor_names[fact['owner']]} → {actor_names[fact['company']]} · {CONTROL_LABELS[fact['kind']]} · Tagi jogállás: {MEMBERSHIP_LABELS[fact['membership']]} · Feltétel: {ANSWER_LABELS[fact['condition']]}")
+            if fact['kind'] == 'voting_agreement':
+                vote = '>50%' if fact['aligned_bound'] == 'over_half' else str(fact['aligned_votes']) + '%' if fact['aligned_votes'] is not None else 'Tisztázandó'
+                doc.add_paragraph('Megállapodás szerinti együttes szavazat: ' + vote)
+            doc.add_paragraph(fact['reason'] + ' · ' + evidence_text(fact['evidence']))
+        for fact in row.get('management_facts', []):
+            doc.add_paragraph('Ügyvezetési tény: ' + ', '.join(actor_names[m] for m in fact['managers']) + f" · Egyezőség: {ANSWER_LABELS[fact['common_management']]} · Üzleti döntő befolyás: {ANSWER_LABELS[fact['business_control']]} · Pénzügyi döntő befolyás: {ANSWER_LABELS[fact['financial_control']]}")
+            doc.add_paragraph(fact['reason'] + ' · ' + evidence_text(fact['evidence']))
+        for label, values in (('Kapcsoltsági jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
             for value in values:
                 doc.add_paragraph(label + ': ' + value)
     doc.add_heading('Jóváhagyás és visszakövethetőség', 1)

@@ -130,8 +130,63 @@ def main():
                     from docx import Document
                     report=context.request.get(URL+'/api/tao/cases/'+family_id+'/report/docx')
                     assert 'Igazolt rokonság: P – Q' in '\n'.join(p.text for p in Document(BytesIO(report.body())).paragraphs)
+                    control_data={'title':'Irányítás böngészőteszt','as_of':'2025-12-31',
+                                  'companies':[{'id':v,'name':v.upper()} for v in ['a','b','c']],
+                                  'persons':[{'id':'p','name':'Közös Vezető'}]}
+                    response=context.request.post(URL+'/api/tao/cases',data={'data':control_data},headers={'X-CSRF-Token':setup.json()['csrf']})
+                    assert response.status==200,response.text();control_id=response.json()['id']
+                    page.goto(URL+'/tao?case='+control_id)
+                    page.get_by_role('heading',name=control_data['title'],exact=True).wait_for()
+                    page.locator('.tabs [data-tab="data"]').click()
+                    page.get_by_role('button',name='Ügyvezetési tény rögzítése',exact=True).click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=manager-p]').check()
+                    form.locator('[name=common_management]').select_option('yes')
+                    form.locator('[name=reason]').fill('Azonos ügyvezető; a tényleges döntési rend még tisztázandó.')
+                    form.locator('[name=source]').fill('Ellenőrzött vezetői nyilatkozat')
+                    form.locator('[name=confirmed]').check();form.locator('[type=submit]').click()
+                    page.locator('#editor').wait_for(state='hidden')
+                    current=context.request.get(URL+'/api/tao/cases/'+control_id).json()
+                    assert not current['calculation']['rows'][0]['signals']
+                    page.locator('[data-action="management"][data-id]').click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=business_control]').select_option('yes')
+                    form.locator('[name=financial_control]').select_option('yes')
+                    form.locator('[name=reason]').fill('Az üzleti és pénzügyi politika feletti döntő irányítás igazolt.')
+                    form.locator('[type=submit]').click();page.locator('#editor').wait_for(state='hidden')
+                    page.get_by_role('button',name='Irányítási jog rögzítése',exact=True).click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=company]').select_option('c')
+                    form.locator('[name=membership]').select_option('member')
+                    form.locator('[name=condition]').select_option('yes')
+                    form.locator('[name=confirmed]').check();form.locator('[type=submit]').click()
+                    page.locator('#editor-error').wait_for()
+                    form.locator('[name=reason]').fill('A vezetők többségének megválasztási joga igazolt.')
+                    form.locator('[name=source]').fill('Ellenőrzött társasági szerződés')
+                    form.locator('[type=submit]').click();page.locator('#editor').wait_for(state='hidden')
+                    current=context.request.get(URL+'/api/tao/cases/'+control_id).json()
+                    assert current['calculation']['rows'][0]['stage']=='control_signal'
+                    assert current['calculation']['rows'][1]['stage']=='control_signal'
+                    assert not current['calculation']['rows'][2]['signals']
+                    page.locator('.tabs [data-tab="matrix"]').click()
+                    assert 'Ügyvezetési tények forrásai' in page.locator('#pair-detail').inner_text()
+                    for width in [360,390,768,1366,1440]:
+                        page.set_viewport_size({'width':width,'height':1000})
+                        assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),f'Control overflow at {width}'
+                    export=context.request.get(URL+'/api/tao/cases/'+control_id+'/report/xlsx')
+                    book=load_workbook(BytesIO(export.body()))
+                    assert 'Irányítási jogok' in book.sheetnames and 'Ügyvezetési tények' in book.sheetnames
+                    report=context.request.get(URL+'/api/tao/cases/'+control_id+'/report/docx')
+                    text='\n'.join(p.text for p in Document(BytesIO(report.body())).paragraphs)
+                    assert 'Irányítási tény: A → C' in text and 'Ügyvezetési tény: Közös Vezető' in text
+                    if shutil.which('soffice'):
+                        pdf=context.request.get(URL+'/api/tao/cases/'+control_id+'/report/pdf',timeout=90000)
+                        assert pdf.status==200,pdf.text() if pdf.status!=200 else ''
+                        assert pdf.body().startswith(b'%PDF')
+                        extracted=subprocess.run([shutil.which('pdftotext'),'-','-'],input=pdf.body(),capture_output=True,check=True).stdout.decode('utf-8')
+                        assert 'Ügyvezetési tény:' in extracted and 'Irányítási tény:' in extracted
                     assert not errors,errors
-                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'browser_errors':errors}))
+                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'control_edit':True,'management_conditions':True,'control_exports':True,'browser_errors':errors}))
                     browser.close()
             finally:
                 server.terminate()
