@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 from urllib.request import urlopen
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'test-results';OUT.mkdir(exist_ok=True)
@@ -74,6 +74,32 @@ def main():
                     assert Path(download.value.path()).stat().st_size>1000
                     page.goto(URL+kkv_link);page.get_by_role('heading',name='Böngészőteszt · ellenőrzött cégnév',exact=True).wait_for()
                     assert page.get_by_text('Előzetes eredmény',exact=False).count()>0
+                    # Refresh existing cases with the same PDFs, selecting only an explicit name correction.
+                    for module, link in [('tao',tao_link),('kkv',kkv_link)]:
+                        cid=link.split('case=')[-1] if module=='tao' else link.split('/')[2]
+                        base=URL+('/api/tao/cases/' if module=='tao' else '/api/cases/')+cid
+                        before=context.request.get(base).json()
+                        page.goto(URL+'/pdf-import?module='+module)
+                        page.locator('#files').set_input_files([str(p) for p in sources])
+                        page.locator('#review-form').wait_for(timeout=120000)
+                        page.locator('[data-path="0.name"]').fill('PDF-frissítéssel ellenőrzött név')
+                        page.locator('#target-case').select_option(cid)
+                        expect(page.locator("#title")).to_be_disabled()
+                        page.locator('#confirmed').check();page.locator('#apply').click()
+                        page.locator('#merge-confirm').wait_for()
+                        assert page.locator('[data-operation]:checked').count()==0
+                        changed=page.locator('#comparison section').filter(has_text='PDF-frissítéssel ellenőrzött név').first
+                        changed.locator('[data-operation]').check()
+                        for width in [360,390,768,1366,1440]:
+                            page.set_viewport_size({'width':width,'height':1000})
+                            assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),f'Merge overflow at {width}'
+                        page.locator('#merge-confirm').check();page.locator('#merge-apply').click()
+                        page.locator('#result a').wait_for(timeout=30000)
+                        after=context.request.get(base).json()
+                        assert after['version']==before['version']+1
+                        assert any(c['name']=='PDF-frissítéssel ellenőrzött név' for c in after['data']['companies'])
+                        prior=context.request.get(base+'/versions/'+str(before['version'])).json()
+                        assert prior['data']==before['data']
                     chain = {'title':'Közvetett befolyás böngészőteszt','as_of':'2025-12-31',
                              'companies':[{'id':v,'name':v.upper()} for v in ['a','b','c']],
                              'voting_facts':[{'id':str(i),'owner':owner,'company':target,'capital':'60',
@@ -185,8 +211,45 @@ def main():
                         assert pdf.body().startswith(b'%PDF')
                         extracted=subprocess.run([shutil.which('pdftotext'),'-','-'],input=pdf.body(),capture_output=True,check=True).stdout.decode('utf-8')
                         assert 'Ügyvezetési tény:' in extracted and 'Irányítási tény:' in extracted
+                    special={'title':'BVK és telephely böngészőteszt','as_of':'2025-12-31',
+                             'companies':[{'id':'a','name':'Fővállalkozás'},{'id':'pe','name':'Magyar telephely','entity_type':'permanent_establishment'},{'id':'b','name':'Portfóliócég'}],
+                             'persons':[{'id':'p','name':'Vagyonkezelő személy'}]}
+                    response=context.request.post(URL+'/api/tao/cases',data={'data':special},headers={'X-CSRF-Token':setup.json()['csrf']})
+                    assert response.status==200,response.text();special_id=response.json()['id']
+                    page.goto(URL+'/tao?case='+special_id)
+                    page.get_by_role('heading',name=special['title'],exact=True).wait_for()
+                    page.locator('.tabs [data-tab="data"]').click()
+                    page.get_by_role('button',name='Telephelyi tény rögzítése',exact=True).click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=tax_status]').select_option('yes')
+                    form.locator('[name=reason]').fill('Külföldi vállalkozó igazolt belföldi Tao-telephelye.')
+                    form.locator('[name=source]').fill('Telephelyi adójogi nyilatkozat')
+                    form.locator('[name=confirmed]').check();form.locator('[type=submit]').click()
+                    page.locator('#editor').wait_for(state='hidden')
+                    page.get_by_role('button',name='BVK-tény rögzítése',exact=True).click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=name]').fill('Teszt kezelt vagyon')
+                    form.locator('[name=trustees-p]').check();form.locator('[name=holdings-b]').check()
+                    form.locator('[name=reason]').fill('A szerződéses szerepek rögzítve, a joggyakorlás külön értékelve.')
+                    form.locator('[name=source]').fill('BVK-szerződés')
+                    form.locator('[name=confirmed]').check();form.locator('[name=rights_reviewed]').check()
+                    for width in [360,390,768,1366,1440]:
+                        page.set_viewport_size({'width':width,'height':1000})
+                        assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),f'BVK editor overflow at {width}'
+                    form.locator('[type=submit]').click();page.locator('#editor').wait_for(state='hidden')
+                    current=context.request.get(URL+'/api/tao/cases/'+special_id).json()
+                    assert current['calculation']['rows'][0]['stage']=='special_signal'
+                    assert not current['calculation']['rows'][1]['signals']
+                    page.locator('.tabs [data-tab="matrix"]').click()
+                    assert 'Telephelyi források' in page.locator('#pair-detail').inner_text()
+                    export=context.request.get(URL+'/api/tao/cases/'+special_id+'/report/xlsx')
+                    book=load_workbook(BytesIO(export.body()))
+                    assert 'Tao-telephelyek' in book.sheetnames and 'BVK-tények' in book.sheetnames
+                    report=context.request.get(URL+'/api/tao/cases/'+special_id+'/report/docx')
+                    text='\n'.join(p.text for p in Document(BytesIO(report.body())).paragraphs)
+                    assert 'Telephelyi tény:' in text and 'BVK: Teszt kezelt vagyon' in text
                     assert not errors,errors
-                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'control_edit':True,'management_conditions':True,'control_exports':True,'browser_errors':errors}))
+                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'control_edit':True,'management_conditions':True,'control_exports':True,'existing_case_merge':True,'bvk_editor':True,'pe_editor':True,'special_exports':True,'browser_errors':errors}))
                     browser.close()
             finally:
                 server.terminate()

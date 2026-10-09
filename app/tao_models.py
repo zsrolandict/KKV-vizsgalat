@@ -19,6 +19,7 @@ class TaoCompany(Model):
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=200)
     registration: str = Field(default='', max_length=80)
+    entity_type: Literal['company', 'managed_assets', 'permanent_establishment'] = 'company'
     registry_reviewed_on: date | None = None
     registry_source: str = Field(default='', max_length=2000)
 
@@ -34,6 +35,8 @@ class VotingFact(Model):
     owner: str
     company: str
     capital: Decimal | None = Field(default=None, ge=0, le=100, max_digits=16, decimal_places=10)
+    capacity: Literal['own', 'trustee', 'unknown'] = 'own'
+    attribution_reviewed: bool = False
     vote_mode: Literal['ownership_default', 'explicit', 'expert', 'unknown'] = 'ownership_default'
     votes: Decimal | None = Field(default=None, ge=0, le=100, max_digits=16, decimal_places=10)
     vote_bound: Literal['exact', 'over_half'] = 'exact'
@@ -51,6 +54,8 @@ class VotingFact(Model):
             raise ValueError('Önmagára mutató tulajdoni kapcsolat nem adható meg.')
         if self.valid_from and self.valid_to and self.valid_to <= self.valid_from:
             raise ValueError('A kizáró végdátumnak a kezdőnap után kell lennie.')
+        if self.attribution_reviewed and not (self.reason and self.evidence.source):
+            raise ValueError('A BVK-szavazatok hozzárendelésének ellenőrzéséhez forrás és indok kell.')
         if self.vote_mode in ('explicit', 'expert'):
             if self.vote_bound == 'exact' and self.votes is None:
                 raise ValueError('Pontos szavazati adathoz százalék szükséges.')
@@ -69,6 +74,7 @@ class PairDecision(Model):
     as_of: date
     result: Literal['related', 'not_related', 'undetermined'] = 'undetermined'
     stage: Literal['unreviewed', 'awaiting_declaration', 'missing_data', 'management_review'] = 'unreviewed'
+    legal_ground: Literal['unspecified', 'abc', 'management', 'pe', 'other'] = 'unspecified'
     basis: str = Field(default='', max_length=2000)
     reason: str = Field(default='', max_length=5000)
     evidence: Evidence = Field(default_factory=Evidence)
@@ -188,6 +194,48 @@ class ManagementFact(Model):
         return self
 
 
+PE_LABELS = {
+    'foreign_business_domestic_pe': 'Külföldi vállalkozó belföldi Tao-telephelye',
+    'taxpayer_foreign_pe': 'Adózó külföldi Tao-telephelye',
+    'other_foreign_business_pe': 'Külföldi vállalkozó további telephelye',
+}
+
+
+class SpecialFact(Model):
+    id: str = Field(min_length=1, max_length=80)
+    valid_from: date | None = None
+    valid_to: date | None = None
+    reviewed_as_of: date | None = None
+    reason: str = Field(default='', max_length=4000)
+    evidence: Evidence = Field(default_factory=Evidence)
+    confirmed: bool = False
+
+    @model_validator(mode='after')
+    def validate_special(self):
+        if self.valid_from and self.valid_to and self.valid_to <= self.valid_from:
+            raise ValueError('A kizáró végdátumnak a kezdőnap után kell lennie.')
+        if self.confirmed and not (self.reason and self.evidence.source):
+            raise ValueError('Igazoláshoz forrás és indok szükséges.')
+        return self
+
+
+class EstablishmentFact(SpecialFact):
+    principal: str
+    establishment: str
+    kind: Literal['foreign_business_domestic_pe', 'taxpayer_foreign_pe', 'other_foreign_business_pe']
+    tax_status: Literal['unknown', 'yes', 'no'] = 'unknown'
+
+
+class TrustFact(SpecialFact):
+    name: str = Field(min_length=1, max_length=200)
+    asset_entity: str | None = None
+    trustees: list[str] = Field(min_length=1, max_length=30)
+    settlors: list[str] = Field(default_factory=list, max_length=30)
+    beneficiaries: list[str] = Field(default_factory=list, max_length=100)
+    holdings: list[str] = Field(min_length=1, max_length=60)
+    rights_reviewed: bool = False
+
+
 class TaoAssessment(Model):
     schema_version: Literal[1] = 1
     title: str = Field(min_length=1, max_length=200)
@@ -198,12 +246,15 @@ class TaoAssessment(Model):
     assumptions: str = Field(default='', max_length=5000)
     law_date: date | None = None
     law_source: str = Field(default='', max_length=3000)
+    law_applicability: str = Field(default='', max_length=3000)
     companies: list[TaoCompany] = Field(min_length=2, max_length=60)
     persons: list[Person] = Field(default_factory=list, max_length=250)
     voting_facts: list[VotingFact] = Field(default_factory=list, max_length=2000)
     family_facts: list[FamilyFact] = Field(default_factory=list, max_length=1000)
     control_facts: list[ControlFact] = Field(default_factory=list, max_length=1000)
     management_facts: list[ManagementFact] = Field(default_factory=list, max_length=1000)
+    establishment_facts: list[EstablishmentFact] = Field(default_factory=list, max_length=300)
+    trust_facts: list[TrustFact] = Field(default_factory=list, max_length=300)
     decisions: list[PairDecision] = Field(default_factory=list, max_length=1770)
 
     @model_validator(mode='after')
@@ -232,6 +283,25 @@ class TaoAssessment(Model):
         for fact in self.management_facts:
             if fact.first not in cids or fact.second not in cids or any(m not in ids for m in fact.managers):
                 raise ValueError('Az ügyvezetési tény ismeretlen szereplőre mutat.')
+        for collection in (self.establishment_facts, self.trust_facts):
+            if len({f.id for f in collection}) != len(collection):
+                raise ValueError('Ismétlődő BVK- vagy telephelyi tényazonosító.')
+        kinds = {c.id: c.entity_type for c in self.companies}
+        for fact in self.establishment_facts:
+            if fact.principal not in cids or fact.establishment not in cids or fact.principal == fact.establishment:
+                raise ValueError('Telephelyhez két külön rögzített szervezet szükséges.')
+            if kinds[fact.principal] == 'permanent_establishment':
+                raise ValueError('A fővállalkozás nem lehet maga is telephelyként rögzített szervezet.')
+            if kinds[fact.establishment] != 'permanent_establishment':
+                raise ValueError('A telephelyet Tao-telephely típusú szervezetként rögzítse.')
+        for fact in self.trust_facts:
+            for members in (fact.trustees, fact.settlors, fact.beneficiaries, fact.holdings):
+                if len(members) != len(set(members)):
+                    raise ValueError('Ismétlődő BVK-szereplő.')
+            if any(x not in ids for x in [*fact.trustees, *fact.settlors, *fact.beneficiaries]) or any(x not in cids for x in fact.holdings):
+                raise ValueError('A BVK-tény ismeretlen szereplőre mutat.')
+            if fact.asset_entity and kinds.get(fact.asset_entity) != 'managed_assets':
+                raise ValueError('A kezelt vagyonhoz elkülönült kezelt vagyon típusú szervezet szükséges.')
         keys = []
         for decision in self.decisions:
             if decision.first not in cids or decision.second not in cids:

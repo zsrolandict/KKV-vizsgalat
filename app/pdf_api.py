@@ -7,7 +7,7 @@ from decimal import Decimal
 from itertools import combinations
 from pathlib import Path
 from typing import Literal
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -17,7 +17,8 @@ from . import db, tao_db
 from .engine import calculate as kkv_calculate
 from .models import Assessment, Model
 from .pdf_import import PARSER_VERSION, entity_id, extract
-from .tao_api import snapshot
+from .tao_api import snapshot, advance, validate_documents
+from .pdf_merge import proposals, merge
 from .tao_models import TaoAssessment, VotingFact
 
 
@@ -30,6 +31,14 @@ class Review(Model):
     documents: list[dict] = Field(min_length=1, max_length=20)
     confirmed: bool = False
     note: str = Field(default='', max_length=3000)
+
+
+class MergeReview(Review):
+    target_case_id: str = Field(min_length=1, max_length=80)
+    version: int = Field(ge=1)
+    entity_matches: dict[str, str] = Field(default_factory=dict, max_length=500)
+    token: str = Field(default='', max_length=64)
+    selected: list[str] = Field(default_factory=list, max_length=5000)
 
 
 def initialize():
@@ -45,7 +54,7 @@ def initialize():
         ''')
 
 
-def draft(payload):
+def draft(payload, partial=False):
     """Build an unapproved case. Unknown percentages never become zero ownerships."""
     companies, persons, facts, financials, notes = {}, {}, [], {}, []
     names = {}
@@ -70,7 +79,7 @@ def draft(payload):
                 # Name alone is a candidate identity; verification is mandatory, never a kinship proof.
                 persons.setdefault(oid, dict(id=oid, name=name, notes='PDF-ből javasolt személy; azonosság szakértőileg ellenőrzendő.'))
             fact = dict(id=str(uuid4()), owner=oid, company=target, capital=owner.get('capital'),
-                        vote_mode=owner.get('vote_mode', 'unknown'), votes=owner.get('votes'), vote_bound=owner.get('vote_bound', 'exact'),
+                        capacity='trustee' if owner.get('trustee') else 'own', vote_mode=owner.get('vote_mode', 'unknown'), votes=owner.get('votes'), vote_bound=owner.get('vote_bound', 'exact'),
                         valid_from=owner.get('valid_from'), valid_to=owner.get('valid_to'), registered_on=owner.get('registered_on'),
                         deletion_registered_on=owner.get('deletion_registered_on'), evidence={**owner.get('evidence', {}), 'document_id':doc.get('document_id')},
                         reason=owner.get('reason', ''))
@@ -98,8 +107,9 @@ def draft(payload):
                 financials[key] = value
     common = dict(title=payload.title, as_of=payload.as_of, companies=list(companies.values()), persons=list(persons.values()))
     if payload.module == 'tao':
-        data = TaoAssessment(**common, voting_facts=facts,
+        raw = dict(**{**common, 'as_of':payload.as_of.isoformat()}, voting_facts=[VotingFact.model_validate(f).model_dump(mode='json') for f in facts],
             assumptions='PDF-importból készült tervezet. Személyazonosság, rokonság, irányítás, BVK és közvetett befolyás szakértői ellenőrzést igényel. ' + payload.note)
+        data = raw if partial else TaoAssessment(**raw)
     else:
         if payload.root not in companies:
             payload.root = entity_id(payload.root, '')
@@ -108,7 +118,7 @@ def draft(payload):
         ownerships = []
         seen_ownerships = set()
         for fact in facts:
-            if fact['capital'] is None or fact['vote_bound'] != 'exact' or fact['vote_mode'] == 'unknown' or not fact['valid_from']:
+            if fact['capacity'] != 'own' or fact['capital'] is None or fact['vote_bound'] != 'exact' or fact['vote_mode'] == 'unknown' or not fact['valid_from']:
                 continue
             votes = fact['capital'] if fact['vote_mode'] == 'ownership_default' else fact['votes']
             if votes is None:
@@ -187,6 +197,81 @@ def build_router(staff):
             if not source:
                 raise HTTPException(404, 'A forrás nem található.')
         return FileResponse(db.data_dir() / 'pdf-batches' / bid / (did+'.pdf'), filename=source['filename'], media_type='application/pdf')
+
+    def prepare_merge(con, bid, payload, uid):
+        row = batch(con, bid, uid)
+        if con.execute('SELECT 1 FROM pdf_applications WHERE batch_id=? AND module=?', (bid,payload.module)).fetchone():
+            raise HTTPException(409, 'Ez a PDF-csomag ebben a vizsgálattípusban már felhasználásra került.')
+        valid = {f['id']:f for f in json.loads(row['files']) if f['candidate']}
+        ids = [d.get('document_id') for d in payload.documents]
+        if len(ids)!=len(set(ids)) or any(did not in valid for did in ids):
+            raise HTTPException(422, 'Idegen vagy ismételt PDF-forrás az összehasonlításban.')
+        table = 'tao_cases' if payload.module=='tao' else 'cases'
+        case = con.execute(f'SELECT * FROM {table} WHERE id=?',(payload.target_case_id,)).fetchone()
+        if not case:raise HTTPException(404, 'A célvizsgálat nem található.')
+        case = dict(case)
+        if case['version'] != payload.version:raise HTTPException(409, 'Az ügy közben változott. Készítsen új összehasonlítást a friss verzióval.')
+        temporary=payload.model_copy(deep=True)
+        if payload.module=='kkv':temporary.root=entity_id(payload.documents[0].get('registration',''),payload.documents[0].get('name',''))
+        incoming,notes=draft(temporary,partial=True)
+        incoming=incoming.model_dump(mode='json') if hasattr(incoming,'model_dump') else incoming
+        for coll in ('voting_facts','ownerships','decisions'):
+            for i,fact in enumerate(incoming.get(coll,[])):
+                fact['id']=str(uuid5(NAMESPACE_URL,bid+':'+coll+':'+str(i)))
+        existing=json.loads(case['data'])
+        comparison=proposals(existing,incoming,payload.module,bid+':'+case['id'],payload.entity_matches)
+        return case,existing,valid,ids,notes,comparison
+
+    @router.post('/api/pdf/batches/{bid}/compare')
+    def compare(bid: str, payload: MergeReview, u=Depends(staff)):
+        if len(db.dumps(payload.documents)) > 2*1024*1024:raise HTTPException(413,'Túl nagy ellenőrzési adatcsomag.')
+        try:
+            with db.connection() as con:
+                case,_,_,_,_,comparison=prepare_merge(con,bid,payload,u['id'])
+            return dict(**comparison,version=case['version'],case_id=case['id'])
+        except (ValueError, KeyError, TypeError, ArithmeticError, AttributeError, IndexError) as exc:
+            raise HTTPException(422,'Az összehasonlítás adatai ellenőrizendők: '+str(exc)[:500])
+
+    @router.post('/api/pdf/batches/{bid}/merge')
+    def merge_into_case(bid: str, payload: MergeReview, u=Depends(staff)):
+        if not payload.confirmed or not payload.token:raise HTTPException(422,'Az összehasonlítás és a források külön jóváhagyása szükséges.')
+        if len(db.dumps(payload.documents)) > 2*1024*1024:raise HTTPException(413,'Túl nagy ellenőrzési adatcsomag.')
+        copied=[]
+        try:
+            with db.connection() as con:
+                con.execute('BEGIN IMMEDIATE')
+                case,existing,valid,ids,notes,comparison=prepare_merge(con,bid,payload,u['id'])
+                if comparison['token'] != payload.token:raise HTTPException(409,'Az adatok vagy az azonossági döntések változtak. Készítsen új összehasonlítást.')
+                data=merge(existing,comparison,payload.selected,payload.module)
+                cid=case['id'];stamp=db.now()
+                folder=db.data_dir()/'uploads'/('tao' if payload.module=='tao' else '')
+                folder.mkdir(parents=True,exist_ok=True)
+                for did in ids:
+                    f=valid[did];dest=folder/(did+'.pdf')
+                    if dest.exists():raise HTTPException(409,'A forrásfájl már szerepel az adattárban.')
+                    shutil.copyfile(db.data_dir()/'pdf-batches'/bid/(did+'.pdf'),dest);copied.append(dest)
+                    if payload.module=='tao':
+                        con.execute('INSERT INTO tao_documents VALUES(?,?,?,?,?,?,?,?,?,?)',(did,cid,f['filename'],did+'.pdf',f['size'],f['sha256'],u['id'],stamp,stamp,u['id']))
+                    else:
+                        con.execute('INSERT INTO documents VALUES(?,?,?,?,?,?,?,?)',(did,cid,f['filename'],did+'.pdf',f['size'],f['sha256'],u['id'],stamp))
+                if payload.module=='tao':
+                    validate_documents(con,cid,data)
+                    version,_=advance(con,case,data,u['id'])
+                    tao_db.audit(con,cid,u['id'],'pdf_merged',f'{bid}; {len(payload.selected)} kijelölt adatcsoport; új szakértői ellenőrzés szükséges.')
+                else:
+                    version=case['version']+1;raw=data.model_dump(mode='json')
+                    con.execute('UPDATE cases SET data=?,version=?,status=?,updated=? WHERE id=?',(db.dumps(raw),version,'draft',stamp,cid))
+                    con.execute('INSERT INTO versions(case_id,version,data,calculation,created,author) VALUES(?,?,?,?,?,?)',(cid,version,db.dumps(raw),db.dumps(kkv_calculate(data)),stamp,u['id']))
+                    db.audit(con,cid,u['id'],'pdf_merged',f'{bid}; {len(payload.selected)} kijelölt adatcsoport; előző jóváhagyás megőrizve.')
+                    if notes:
+                        con.execute('INSERT INTO intake VALUES(?,?,?,?,?,?)',(str(uuid4()),cid,u['id'],'PDF-frissítés: a forrásjelöltek és jogi kapcsolatok újraellenőrzendők.\n'+'\n'.join(notes),stamp,0))
+                con.execute('INSERT INTO pdf_applications VALUES(?,?,?,?,?)',(bid,payload.module,cid,db.dumps(payload.model_dump(mode='json')),stamp))
+            return dict(id=cid,version=version,module=payload.module)
+        except Exception as exc:
+            for dest in copied:dest.unlink(missing_ok=True)
+            if isinstance(exc,(ValueError,KeyError,TypeError,ArithmeticError,AttributeError,IndexError)):
+                raise HTTPException(422,'A kijelölt adatok együtt nem alkalmazhatók: '+str(exc)[:500])
+            raise
 
     @router.post('/api/pdf/batches/{bid}/apply')
     def apply(bid: str, payload: Review, u=Depends(staff)):

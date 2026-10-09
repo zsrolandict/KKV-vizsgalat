@@ -47,9 +47,9 @@ A böngészős működést és a PDF-importot Linuxon ellenőriztük. A Windowso
 
 ## Határok és következő lépések
 
-A Tao-mátrix jogi minősítése indokolt szakértői döntésekből áll. A közvetlen/közvetett szavazati számítás már működik, és kapcsoltsági jelzést ad; önmagában nem végleges Tao-minősítés. A szavazati, igazolt meghatározó jogi és ügyvezetési tények már jelzéseket adnak. Az összetettebb rokonsági tényállások és vegyes irányítási aggregálás, BVK, telephelyi és speciális Tao-jogalapok teljes automatikus motorja még nincs implementálva. A körkörös hálók szakértői számítást igényelnek. A vezetői jelöltek az importellenőrzésben és a forrásokban szerepelnek; nem keletkeztetnek automatikus kapcsoltságot. A transzferár-kötelezettség teljes vizsgálata külön fejlesztési lépés. Lásd: [jogi források](jogi-forrasok.md).
+A Tao-mátrix jogi minősítése indokolt szakértői döntésekből áll. A közvetlen/közvetett szavazati számítás már működik, és kapcsoltsági jelzést ad; önmagában nem végleges Tao-minősítés. A szavazati, igazolt meghatározó jogi és ügyvezetési tények már jelzéseket adnak. Az összetettebb rokonsági tényállások és vegyes irányítási aggregálás, a BVK-joggyakorlás teljes automatikus hozzárendelése és a speciális célú Tao-jogalapok nincsenek általános automatikus minősítéssé alakítva. A BVK szerepei és a Tao-telephelyek már külön tényként rögzíthetők; a telephelyi d)–e) jogalap igazolt tényekből jelzést ad. A körkörös hálók szakértői számítást igényelnek. A vezetői jelöltek az importellenőrzésben és a forrásokban szerepelnek; nem keletkeztetnek automatikus kapcsoltságot. A transzferár-kötelezettség teljes vizsgálata külön fejlesztési lépés. Lásd: [jogi források](jogi-forrasok.md).
 
-Az import jelenleg új tervezetet hoz létre. Meglévő ügyhöz ismételt PDF-import és mezőnkénti összehasonlítás még fejlesztendő. Az új dokumentum hagyományos feltöltése a Tao-ügyben új, ellenőrizendő verziót készít; a korábban jóváhagyott pillanatkép megmarad.
+Az import új tervezetet vagy meglévő ügy új verzióját készíti. Az „Adatok alkalmazása” mezőben választható a célügy. Az összehasonlítás előző/új értékeket mutat; nincs előre kijelölt módosítás. A cégazonosító egyezése alapján javasolt párosítás készül, a magánszemélyek azonosságáról külön kell dönteni. A tények és pénzügyi sorok összetartozó csoportokként választhatók. Az új források újraellenőrzést igénylő tervezetet hoznak létre, az előző jóváhagyott verzió megmarad. Elavult összehasonlítás vagy közben megváltozott ügy nem menthető. A KKV-frissítés nem írja felül a Tao-ügyet és fordítva. Az új dokumentum hagyományos feltöltése a Tao-ügyben új, ellenőrizendő verziót készít; a korábban jóváhagyott pillanatkép megmarad.
 
 ## Ellenőrzés
 
@@ -60,3 +60,13 @@ KKV_DATA_DIR=/tmp/kkv-tests .venv/bin/python -m unittest discover -s tests -t . 
 ```
 
 A böngészőtesztek külön ideiglenes adatbázist használnak. A PDF-teszt tényleges drag-and-drop eseményt, módosítást, mindkét tervezetet, forráslétszám kezelését, Excel-letöltést és 360/390/768/1366/1440 px szélességet ellenőriz. Az első tesztverziót a felhasználó mind a 12 PDF-jével is ellenőriztük, külön ideiglenes tesztadatbázisban az automatizált regressziós tesztekkel együtt. A készülő képek és tesztkimenetek az ignorált `test-results/` alatt maradnak.
+
+## BVK, telephely és történeti jogi forrás
+
+A Tao Adatok nézetében külön BVK- és telephelyi szerkesztő található. A cégjegyzéki telephelycím nem Tao-telephely bizonyíték. A fővállalkozás és adójogi telephelye külön szereplő és igazolt kapcsolat. A d)–e) szerinti kiterjesztés csak a fővállalkozás a)–c) jogalapú kapcsolatához kötődik; f) ügyvezetési kapcsolatot nem terjesztünk így tovább. A szakértői döntés jogalapcsoportja külön választható.
+
+A BVK vagyonkezelői, vagyonrendelői és kedvezményezetti szerepei nem adnak automatikusan irányítást. A vagyonkezelőként jelölt PDF-részesedés a Tao-ban elkülönült jogállással érkezik, és külön joggyakorlási ellenőrzésig nem számít saját szavazatnak. KKV-ban nem készül belőle automatikus saját tulajdoni sor. A BVK és telephely forrásai a Word/PDF indokolásban és külön Excel-lapokon megmaradnak.
+
+Mindkét vizsgálat véglegesítéséhez szükséges az ellenőrzött jogi időállapot és forrás. Későbbi jogi időállapotból korábbi vizsgálati napra csak dokumentált alkalmazhatósági indokkal lehet véglegesíteni. Ez szakértői dokumentálási kontroll, nem a történeti törvényszöveg automatikus hitelesítése.
+
+Helyi mentés és frissítés: [Windows-karbantartás](windows-karbantartas.md).

@@ -7,7 +7,7 @@ from docx.shared import Cm, Pt, RGBColor
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
-from .tao_models import FAMILY_LABELS, CONTROL_LABELS
+from .tao_models import FAMILY_LABELS, CONTROL_LABELS, PE_LABELS
 from .tao_engine import RESULT_LABELS
 
 
@@ -60,11 +60,11 @@ def xlsx_report(data, calc, meta):
                                  value['basis'], ', '.join(value['fact_ids'])])
     facts = wb.create_sheet('Szavazati források')
     names = {x.id: x.name for x in [*data.companies, *data.persons]}
-    facts.append(['Tulajdonos', 'Célcég', 'Tőke (%)', 'Szavazati mód', 'Szavazat (%) / feltétel', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Forrás', 'Indok', 'Tényazonosító'])
+    facts.append(['Tulajdonos', 'Célcég', 'Tőke (%)', 'Szavazati mód', 'Szavazat (%) / feltétel', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Forrás', 'Indok', 'Tényazonosító', 'Részesedés jogállása', 'BVK-hozzárendelés ellenőrizve'])
     for fact in data.voting_facts:
         vote = '>50%' if fact.vote_bound == 'over_half' else fact.votes
         facts.append([names[fact.owner], names[fact.company], fact.capital, fact.vote_mode, vote,
-                      fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.evidence.source, fact.reason, fact.id])
+                      fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.evidence.source, fact.reason, fact.id, fact.capacity, str(fact.attribution_reviewed)])
     relatives = wb.create_sheet('Rokonsági források')
     relatives.append(['Első személy', 'Második személy', 'Viszony', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Igazolt', 'Forrás / oldal', 'Tényazonosító'])
     for fact in data.family_facts:
@@ -92,11 +92,19 @@ def xlsx_report(data, calc, meta):
             routes.append([row['first_name'], row['second_name'], names[route['owner']], names[route['company']],
                            ' → '.join(names[n] for n in route['route']), route['basis'],
                            ', '.join(route['control_ids']), ', '.join(route['fact_ids'])])
+    pe = wb.create_sheet('Tao-telephelyek')
+    pe.append(['Fővállalkozás','Telephely','Jogviszony','Adójogi jogállás','Igazolt','Indok','Forrás','Kezdet','Vége','Ellenőrzött nap'])
+    for f in data.establishment_facts:
+        pe.append([names[f.principal],names[f.establishment],PE_LABELS[f.kind],ANSWER_LABELS[f.tax_status],str(f.confirmed),f.reason,evidence_text(f.evidence.model_dump(mode='json')),f.valid_from,f.valid_to,f.reviewed_as_of])
+    trusts = wb.create_sheet('BVK-tények')
+    trusts.append(['Kezelt vagyon','Vagyonkezelők','Vagyonrendelők','Kedvezményezettek','Érintett cégek','Jogok ellenőrizve','Indok','Forrás'])
+    for f in data.trust_facts:
+        trusts.append([f.name,', '.join(names[x] for x in f.trustees),', '.join(names[x] for x in f.settlors),', '.join(names[x] for x in f.beneficiaries),', '.join(names[x] for x in f.holdings),str(f.rights_reviewed),f.reason,evidence_text(f.evidence.model_dump(mode='json'))])
     profile = wb.create_sheet('Vizsgálati keret')
     for key, value in [('Ügyazonosító', meta['id']), ('Verzió', meta['version']), ('Állapot', meta['label']),
                        ('Vizsgálati cél', data.purpose), ('Vállalt vizsgálati kör', data.scope),
                        ('Feltételezések', data.assumptions), ('Jogi időállapot', data.law_date),
-                       ('Jogi forrás', data.law_source), ('Munkafolyamat-verzió', calc['rule_version']),
+                       ('Történeti alkalmazhatóság', data.law_applicability), ('Jogi forrás', data.law_source), ('Munkafolyamat-verzió', calc['rule_version']),
                        ('Jóváhagyó', meta.get('approver') or ''), ('Jóváhagyás', meta.get('approved_at') or '')]:
         profile.append([key, value])
     for sheet in wb:
@@ -138,6 +146,7 @@ def word_report(data, calc, meta):
     doc.add_paragraph(data.scope or 'A felsorolt vállalkozások egymás közötti kapcsoltsági vizsgálata.')
     doc.add_paragraph('A szavazati jelzések adat-előkészítési segítséget adnak. A jogi eredmények a rögzített szakértői döntésekből származnak; nem automatikus törvényi gráfminősítések.')
     doc.add_paragraph(f'Jogi időállapot: {data.law_date or "ellenőrizendő"}\nForrás: {data.law_source or "nincs rögzítve"}')
+    doc.add_paragraph('Történeti alkalmazhatóság: '+(data.law_applicability or 'külön indok nincs rögzítve'))
     if data.assumptions:
         doc.add_paragraph('Feltételezések: ' + data.assumptions)
     table = doc.add_table(rows=1, cols=3)
@@ -172,6 +181,10 @@ def word_report(data, calc, meta):
         for fact in row.get('management_facts', []):
             doc.add_paragraph('Ügyvezetési tény: ' + ', '.join(actor_names[m] for m in fact['managers']) + f" · Egyezőség: {ANSWER_LABELS[fact['common_management']]} · Üzleti döntő befolyás: {ANSWER_LABELS[fact['business_control']]} · Pénzügyi döntő befolyás: {ANSWER_LABELS[fact['financial_control']]}")
             doc.add_paragraph(fact['reason'] + ' · ' + evidence_text(fact['evidence']))
+        for f in row.get('establishment_facts', []):
+            doc.add_paragraph('Telephelyi tény: ' + actor_names[f['principal']] + ' → ' + actor_names[f['establishment']] + ' · ' + PE_LABELS[f['kind']] + ' · ' + f['reason'] + ' · ' + evidence_text(f['evidence']))
+        for f in row.get('trust_facts', []):
+            doc.add_paragraph('BVK: ' + f['name'] + ' · ' + f['reason'] + ' · ' + evidence_text(f['evidence']))
         for label, values in (('Kapcsoltsági jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
             for value in values:
                 doc.add_paragraph(label + ': ' + value)

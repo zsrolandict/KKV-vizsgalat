@@ -4,15 +4,17 @@ from itertools import combinations
 from .tao_influence import influence_graph
 from .tao_family import family_groups
 from .tao_models import CLOSE_FAMILY_TYPES
+from .tao_special import apply_special
 from .tao_control import control_paths, management_signals, current_or_pending
 
-RULE_VERSION = 'TAO-munkafolyamat-1.3-iranyitas'
+RULE_VERSION = 'TAO-munkafolyamat-1.4-bvk-telephely'
 RESULT_LABELS = {'related': 'Kapcsolt', 'not_related': 'Nem kapcsolt', 'undetermined': 'Nem dönthető el'}
 STAGE_LABELS = {
     'unreviewed': 'Iratellenőrzésre vár',
     'awaiting_declaration': 'Nyilatkozatra vár',
     'missing_data': 'Hiányzó adat',
     'management_review': 'Ügyvezetés – irányítás tisztázandó',
+    'special_signal': 'Telephelyi kapcsoltsági jelzés',
     'control_signal': 'Igazolt irányítási jelzés',
     'voting_signal': 'Többségi szavazati jelzés',
     'expert_draft': 'Szakértői döntés megerősítésre vár',
@@ -27,6 +29,8 @@ def active(fact, day):
 
 
 def effective_vote(fact):
+    if fact.capacity != 'own' and not fact.attribution_reviewed:
+        return None
     if fact.vote_mode == 'ownership_default':
         return fact.capital
     if fact.vote_mode in ('explicit', 'expert'):
@@ -95,6 +99,7 @@ def calculate(data):
                     signals.append(f'{kind} szavazati befolyás: {names[owner]} → {names[target]}: {value.label} (Ptk. 8:2. §).')
             if owner not in (a.id, b.id) and all(target in related_values and related_values[target].majority for target in (a.id, b.id)):
                 signals.append(f'Közös közvetlen/közvetett többségi szavazati szereplő: {names[owner]} (Ptk. 8:2. §; Tao. 4. § 23. pont c)).')
+        abc_voting = bool(signals)
         control_evidence = {f.id for f in data.control_facts if f.company in (a.id, b.id) and current_or_pending(f, data.as_of)}
         control_calculations, control_signals = [], []
         for owner in names:
@@ -122,11 +127,13 @@ def calculate(data):
             if relevant:
                 control_evidence.add(fact.id)
                 missing.append(f'{names[fact.owner]} → {names[fact.company]}: {message}')
+        abc_control = bool(control_signals)
         management, management_missing, management_evidence = management_signals(data, a.id, b.id, active)
         control_signals.extend(management)
         signals.extend(control_signals)
         missing.extend(management_missing)
         family_evidence = []
+        abc_family = False
         for group in families:
             family_values, family_used, errors = {}, set(), []
             for target in (a.id, b.id):
@@ -144,6 +151,7 @@ def calculate(data):
                 missing.extend(errors)
                 family_evidence.extend(group['facts'])
             if all(target in family_values and family_values[target].majority for target in (a.id, b.id)):
+                abc_family = True
                 signals.append(f'Igazolt közeli hozzátartozók összeszámított többségi szavazata: {group["name"]} → {a.name}: {family_values[a.id].label}; {b.name}: {family_values[b.id].label}.')
         for fact in data.family_facts:
             if fact.relationship in CLOSE_FAMILY_TYPES and not (fact.confirmed and active(fact, data.as_of)):
@@ -212,8 +220,10 @@ def calculate(data):
             'signals': signals, 'missing': [*missing, *([d.missing] if d and d.missing else [])],
             'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'family_facts': list({f['id']: f for f in family_evidence}.values()),
             'control_facts': [rights_by_id[fid].model_dump(mode='json') for fid in sorted(control_evidence)],
-            'management_facts': management_evidence, 'control_calculations': control_calculations, 'confirmed': bool(d and d.confirmed),
+            'management_facts': management_evidence, 'control_calculations': control_calculations, 'abc_signal': abc_voting or abc_control or abc_family,
+            'confirmed': bool(d and d.confirmed),
         })
+    apply_special(data, rows, active)
     counts = {value: sum(r['result'] == value for r in rows) for value in RESULT_LABELS}
     stages = {value: sum(r['stage'] == value for r in rows) for value in STAGE_LABELS}
     return {'rule_version': RULE_VERSION, 'as_of': data.as_of.isoformat(), 'rows': rows,

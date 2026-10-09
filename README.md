@@ -122,3 +122,5 @@ tests/            Számítási és API-tesztek
 ```
 
 A felület buildlépés nélkül fut. Több szerverpéldányos, nagyobb szervezeti telepítéshez PostgreSQL és közös dokumentumtároló bevezetése külön üzemeltetési bővítés.
+
+Helyi biztonsági mentés, visszaállítás és ZIP-ből frissítés: [Windows-karbantartás](docs/windows-karbantartas.md).

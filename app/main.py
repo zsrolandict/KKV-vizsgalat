@@ -308,7 +308,12 @@ def approve(cid:str,payload:Approval,u=Depends(reviewer)):
         con.execute('BEGIN IMMEDIATE');row=visible_case(con,cid,u)
         if row['version']!=payload.version:raise HTTPException(409,'Az ügy verziója megváltozott.')
         if row['status']=='approved':raise HTTPException(409,'Ez a verzió már jóváhagyott.')
-        calc=calculate(Assessment.model_validate_json(row['data']))
+        data=Assessment.model_validate_json(row['data'])
+        if not data.law_date or not data.law_source:
+            raise HTTPException(422,'A vizsgálat adatainál rögzítse az ellenőrzött jogi időállapotot és forrását, a vizsgált évekre is kiterjedően.')
+        if data.law_date > data.as_of and not data.law_applicability:
+            raise HTTPException(422,'A jogi forrás időállapota későbbi a vizsgálatnál. Indokolja a történeti alkalmazhatóságát, vagy válassza ki a megfelelő korábbi forrást.')
+        calc=calculate(data)
         if not calc['ready']:raise HTTPException(422,{'message':'A tisztázandó kérdések miatt az ügy nem véglegesíthető.','blockers':calc['blockers']})
         pending=con.execute('SELECT count(*) FROM intake WHERE case_id=? AND reviewed=0',(cid,)).fetchone()[0]
         if pending:raise HTTPException(422,'Feldolgozatlan ügyfélválaszok vannak. Előbb ellenőrizze ezeket.')

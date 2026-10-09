@@ -32,6 +32,7 @@ def word_report(data, calculation, metadata):
     if not metadata['approved']:
         doc.add_paragraph('TERVEZET – szakértői jóváhagyás nélkül végleges állásfoglalásként nem használható.').runs[0].bold=True
     doc.add_paragraph(f'Vizsgálat napja: {data.as_of.isoformat()} · Profil: {"Magyar Kkv. törvény" if data.profile=="HU" else "EU KKV-definíció"}')
+    doc.add_paragraph(f'Jogi időállapot: {data.law_date or "ellenőrizendő"}\nEllenőrzött jogi forrás: {data.law_source or "nincs rögzítve"}\nTörténeti alkalmazhatóság: {data.law_applicability or "külön indok nincs rögzítve"}')
     doc.add_heading('Feladat és alapadatok',1)
     doc.add_paragraph(data.purpose)
     if data.client:doc.add_paragraph(f'Megbízó: {data.client}')

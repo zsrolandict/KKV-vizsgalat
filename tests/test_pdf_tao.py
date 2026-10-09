@@ -68,6 +68,7 @@ class ParserTests(unittest.TestCase):
     def test_duplicate_company_source_preserves_reviewed_name_and_ownership(self):
         first=parse_text(TEXT);first['name']='Kézzel ellenőrzött név';first['document_id']='a'
         second=parse_text(TEXT);second['document_id']='b'
+        first['owners'][0]['trustee']=False;second['owners'][0]['trustee']=False
         p=Review(module='kkv',title='Minta',as_of='2024-12-31',root=first['registration'],years=[2024],documents=[first,second],confirmed=True)
         data,_=draft(p)
         self.assertEqual(next(c.name for c in data.companies if c.id==data.root),'Kézzel ellenőrzött név')
@@ -93,7 +94,11 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(kkv.financials[0].employees)
         self.assertFalse(kkv.decisions[0].confirmed)
         self.assertEqual(kkv.financials[0].end,date(2025,12,31))
-        self.assertEqual(kkv.ownerships[0].end,date(2023,9,14))
+        self.assertFalse(kkv.ownerships)  # A BVK-részesedés nem saját vagyoni sor.
+        d['owners'][0]['trustee']=False
+        ordinary,_=draft(p)
+        self.assertEqual(ordinary.ownerships[0].end,date(2023,9,14))
+        d['owners'][0]['trustee']=True
         p.module='tao'; t,_=draft(p)
         self.assertIsInstance(t,TaoAssessment)
         self.assertFalse(calculate(t)['complete'])

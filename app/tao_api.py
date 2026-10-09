@@ -48,7 +48,7 @@ def validate_assignment(con, uid):
 
 
 def validate_documents(con, cid, data):
-    for evidence in [*[f.evidence for f in data.voting_facts], *[f.evidence for f in data.family_facts], *[f.evidence for f in data.control_facts], *[f.evidence for f in data.management_facts], *[d.evidence for d in data.decisions]]:
+    for evidence in [*[f.evidence for f in data.voting_facts], *[f.evidence for f in data.family_facts], *[f.evidence for f in data.control_facts], *[f.evidence for f in data.management_facts], *[f.evidence for f in data.establishment_facts], *[f.evidence for f in data.trust_facts], *[d.evidence for d in data.decisions]]:
         if evidence.document_id and not con.execute('SELECT id FROM tao_documents WHERE id=? AND case_id=?', (evidence.document_id, cid)).fetchone():
             raise HTTPException(422, 'A bizonyíték dokumentuma nem ehhez a Tao-vizsgálathoz tartozik.')
 
@@ -160,6 +160,8 @@ def build_router(user, staff, reviewer):
             calc = calculate(data)
             if not calc['law_profile_present']:
                 raise HTTPException(422, 'Rögzítse az ellenőrzött jogi időállapotot és forrását.')
+            if data.law_date > data.as_of and not data.law_applicability:
+                raise HTTPException(422,'A jogi forrás időállapota későbbi a vizsgálatnál. Rögzítse a történeti alkalmazhatóság indokát vagy a megfelelő korábbi forrást.')
             if not data.scope:
                 raise HTTPException(422, 'Rögzítse a vállalt vizsgálati kört.')
             if not calc['complete'] and not payload.partial:
@@ -214,8 +216,10 @@ def build_router(user, staff, reviewer):
                     decision.confirmed = False
                 for family in data.family_facts:
                     family.confirmed = False
-                for fact in [*data.control_facts, *data.management_facts]:
+                for fact in [*data.control_facts, *data.management_facts, *data.establishment_facts, *data.trust_facts]:
                     fact.confirmed = False
+                for vote in data.voting_facts:
+                    if vote.capacity != 'own':vote.attribution_reviewed = False
                 for company in data.companies:
                     company.registry_reviewed_on = None
                 version, calc = advance(con, case, data, u['id'])

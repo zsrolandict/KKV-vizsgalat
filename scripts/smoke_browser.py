@@ -95,6 +95,12 @@ def main():
                     page.locator('[data-rate=confirmed]').check()
                 page.locator('[data-action=save]').click()
                 expect(page.locator('[data-action=save]')).to_be_disabled(); assert page.locator('.tabs .tab-badge').count()==0
+                page.locator('.case-heading [data-action=case-settings]').click()
+                page.locator('#modal-form [name=law_date]').fill('2024-01-01')
+                page.locator('#modal-form [name=law_source]').fill('Böngészőteszt – fiktív ellenőrzött KKV jogi forrás 2024/2025')
+                page.locator('#modal-form [type=submit]').click()
+                page.locator('[data-action=save]').click()
+                expect(page.locator('[data-action=save]')).to_be_disabled()
                 page.locator('.tabs [data-action=tab][data-tab=review]').click()
                 page.locator('#approval-form').wait_for()
                 for name in ['financials','relationships','rules']:page.locator(f'#approval-form [name={name}]').check()
