@@ -468,6 +468,11 @@ def mnb(day:date,u=Depends(staff)):
         raise HTTPException(502,'Az MNB-forrás jelenleg nem érhető el. Rögzítse az árfolyamot és a hivatalos forrást kézzel, majd jelölje az ellenőrzést.')
 
 
+from .tao_api import build_router as tao_router
+
+app.include_router(tao_router(user, staff, reviewer))
+from .pdf_api import build_router as pdf_router
+app.include_router(pdf_router(staff))
 app.mount('/static',StaticFiles(directory=STATIC),name='static')
 
 

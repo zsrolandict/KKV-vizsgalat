@@ -2,6 +2,10 @@
 
 Magyar nyelvű, működő szakértői webalkalmazás KKV-vizsgálatokhoz: cégháló, éves adatok, pontos számítás, verziók, jóváhagyás és Word/PDF állásfoglalás. A csatolt munkafüzet két éves példáját reprodukálja, és javítja a feltárt 25%-os, összegzési és pénzügyi határértékhibákat.
 
+## Új tesztmodul
+
+Az OPTEN PDF-ek drag-and-drop importja szerkeszthető ellenőrző nézetet nyit; ugyanabból a feltöltésből külön KKV- és Tao-tervezet készül. [Kipróbálás és a tesztverzió határai](docs/pdf-tao-tesztverzio.md), [jogi források állapota](docs/jogi-forrasok.md).
+
 ## Indítás
 
 Python 3.11+ szükséges. PDF-exporthoz a `soffice` paranccsal elérhető LibreOffice is kell. A jelenlegi felhőkörnyezetben ezek rendelkezésre állnak.
