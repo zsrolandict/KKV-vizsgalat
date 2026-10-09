@@ -19,6 +19,14 @@ Saját gépen a szerver címén hozz létre tesztfiókot. A KKV-kezdőképernyő
 4. Ugyanebből a feltöltésből a másik szolgáltatáshoz is külön tervezet készíthető. A Tao-minősítés nem kerül át automatikusan KKV-kapcsolati döntésként.
 5. A vizsgálatban folytasd a források, kapcsolatok, éves létszám, beszámoló-elfogadási dátum, árfolyamok és jogi időállapot ellenőrzését. Az adatimport jóváhagyása önmagában nem végleges állásfoglalás.
 
+## Windowsos indítás és felület
+
+Az `Inditas-Windows.cmd` fájl dupla kattintással indítja a helyi alkalmazást. Első alkalommal bekéri a Poppler kicsomagolt mappáját, ellenőrzi a `pdftotext.exe` futását és elmenti az útvonalat. Szóközös és magyar ékezetes útvonal is használható; nem szükséges tartósan átírni a Windows PATH változóját. A szokásos helyre telepített LibreOffice programot is felismeri. A beállítás saját `data/tool-paths.json` fájlban marad. Ha már fut a korábbi alkalmazás, előbb Ctrl+C-vel állítsd le.
+
+A KKV belépőoldala és munkafelülete is fehér, halvány kékesszürke, sötétkék és türkiz stílust használ, helyben szolgált Manrope és DM Sans betűkkel. Laptopon felső navigáció, mobilon feliratos alsó navigáció működik. Az Eszközök menüben elérhető a sablon, a mintavizsgálat és a munkatársak kezelése.
+
+A böngészős működést és a PDF-importot Linuxon ellenőriztük. A Windowsos indító natív Windows-futtatása ebben a felhőkörnyezetben nem ellenőrizhető; az útvonalkeresést és a mentett beállítás kezelését automatikus tesztek fedik le.
+
 ## Mit kezel a tesztverzió?
 
 - Szöveges OPTEN cégadatlap és cégtörténet. A szkennelt, titkosított, sérült vagy más formátumú PDF célzott hibát ad; nincs OCR.

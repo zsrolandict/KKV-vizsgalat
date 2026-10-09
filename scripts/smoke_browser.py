@@ -40,15 +40,25 @@ def main():
                 page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(URL);page.locator('#auth-form').wait_for()
                 page.screenshot(path=str(OUT/'01-elso-belepes.png'),full_page=True)
+                assert page.locator('.auth-brand').evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(242, 247, 248)'
+                assert 'DM Sans' in page.locator('body').evaluate('(el)=>getComputedStyle(el).fontFamily')
                 page.locator('[name=name]').fill('Teszt Szakértő')
                 page.locator('[name=username]').fill('expert')
                 page.locator('[name=password]').fill(password)
                 page.locator('#auth-form [type=submit]').click()
                 page.get_by_role('heading',name='Ügyeid, egy helyen.').wait_for()
+                for width in [360,390,768,1366,1440]:
+                    page.set_viewport_size({'width':width,'height':1000})
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'Overflow at {width}'
+                    page.screenshot(path=str(OUT/f'white-dashboard-{width}.png'))
                 page.locator('.hero [data-action=demo]').click()
                 page.locator('.result-card h2').wait_for()
                 assert page.locator('.result-card h2').inner_text()=='Középvállalkozás'
                 page.screenshot(path=str(OUT/'02-attekintes.png'),full_page=True)
+                for width in [360,390,768,1366,1440]:
+                    page.set_viewport_size({'width':width,'height':1000})
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'Case overflow at {width}'
+                    page.screenshot(path=str(OUT/f'white-case-{width}.png'))
                 page.locator('.tabs [data-action=tab][data-tab=calculation]').click()
                 page.locator('.calculation-total').wait_for()
                 assert '140,5' in page.locator('.calculation-total').inner_text()
@@ -63,6 +73,7 @@ def main():
                 page.screenshot(path=str(OUT/'05-mobil.png'),full_page=True)
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                 page.set_viewport_size({'width':1440,'height':1050})
+                if not page.locator('.sidebar [data-action=new-case]').is_visible():page.locator('.workspace-tools summary').click()
                 page.locator('.sidebar [data-action=new-case]').click()
                 page.locator('#modal-form [name=name]').fill('Böngészőteszt Kft.')
                 page.locator('#modal-form [name=title]').fill('Ellenőrzött mintavizsgálat')
@@ -99,8 +110,10 @@ def main():
                 event.value.save_as(OUT/'smoke-allasfoglalas.pdf')
                 assert (OUT/'smoke-allasfoglalas.pdf').read_bytes().startswith(b'%PDF')
                 page.screenshot(path=str(OUT/'06-jovahagyott-allasfoglalas.png'),full_page=True)
+                if not page.locator('.sidebar [data-action=template]').is_visible():page.locator('.workspace-tools summary').click()
                 with page.expect_download() as event:page.locator('.sidebar [data-action=template]').click()
                 event.value.save_as(OUT/'adatbekeres.xlsx')
+                if not page.locator('.sidebar [data-action=users]').is_visible():page.locator('.workspace-tools summary').click()
                 page.locator('.sidebar [data-action=users]').click()
                 page.get_by_role('heading',name='Munkatársak és ügyfelek.').wait_for()
                 page.locator('[data-action=new-user]').click()

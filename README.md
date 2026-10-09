@@ -20,13 +20,9 @@ Alapértelmezett cím: `http://127.0.0.1:8000`. Az első megnyitáskor **saját 
 
 A felhőfeladat meglévő checkoutját kell használni. Új Git worktree létrehozása a futtatáshoz nem szükséges.
 
-Windows alatt a virtuális környezet és az indítás megfelelője:
+Windows alatt a letöltött csomag gyökerében kattints duplán az **`Inditas-Windows.cmd`** fájlra. Python 3.12 szükséges; az indító létrehozza a virtuális környezetet és ellenőrzi a függőségeket. Az első indításkor add meg a kicsomagolt Poppler mappájának teljes útvonalát. A `pdftotext.exe` helyét az alkalmazás a saját `data/tool-paths.json` fájljába menti, így új PowerShell-ablak esetén is működik a PDF-import. A böngésző automatikusan megnyílik; az indító ablak maradjon nyitva. Leállítás: Ctrl+C.
 
-```powershell
-py -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
+Frissítés előtt állítsd le a korábbi kiszolgálót. Másold az új csomag tartalmát a korábbi alkalmazásmappába, a programfájlok felülírásával. **A saját `data` és `.venv` mappát őrizd meg**: előbbi tartalmazza a fiókokat, ügyeket és a PDF-kiolvasó beállítását. Az indító ugyanabban a mappában legyen, ahol az `app` és a `requirements.txt`. Frissítés után a böngészőben Ctrl+F5.
 
 ## Napi munkafolyamat
 

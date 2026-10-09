@@ -4,6 +4,7 @@ import subprocess
 from datetime import date
 from hashlib import sha256
 from pathlib import Path
+from .tool_paths import configured_tool
 
 PARSER_VERSION = 'opten-text-1'
 DATE = r'\d{4}\.\d{2}\.\d{2}\.?'
@@ -32,10 +33,13 @@ def dates(text):
 def extract(path: Path, filename: str):
     if path.read_bytes()[:5] != b'%PDF-':
         raise ValueError('A fájl nem érvényes PDF.')
+    tool = configured_tool('pdftotext')
+    if not tool:
+        raise RuntimeError('A PDF-kiolvasó nem található. Windowson indítsa az alkalmazást az Inditas-Windows.cmd fájllal, és adja meg a kicsomagolt Poppler mappáját. Linuxon a poppler-utils csomag szükséges.')
     try:
-        run = subprocess.run(['pdftotext', '-layout', '-enc', 'UTF-8', str(path), '-'], capture_output=True, timeout=30)
+        run = subprocess.run([tool, '-layout', '-enc', 'UTF-8', str(path), '-'], capture_output=True, timeout=30)
     except FileNotFoundError:
-        raise RuntimeError('A PDF-kiolvasáshoz a poppler-utils (pdftotext) telepítése szükséges.')
+        raise RuntimeError('A beállított PDF-kiolvasó nem indítható. Ellenőrizze a Poppler útvonalát, majd indítsa újra az alkalmazást.')
     except subprocess.TimeoutExpired:
         raise ValueError('A PDF feldolgozása túllépte a megengedett időt.')
     if run.returncode:

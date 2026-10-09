@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import Field
 
+from .tool_paths import configured_tool
 from . import db, tao_db
 from .models import Model
 from .tao_engine import calculate
@@ -273,7 +274,7 @@ def build_router(user, staff, reviewer):
                 if not path.exists():
                     try:
                         with tempfile.TemporaryDirectory(dir=folder) as temp_dir:
-                            subprocess.run(['soffice', f'-env:UserInstallation={Path(temp_dir).as_uri()}/profile', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, str(folder / (stem + '.docx'))],
+                            subprocess.run([configured_tool('soffice') or 'soffice', f'-env:UserInstallation={Path(temp_dir).as_uri()}/profile', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, str(folder / (stem + '.docx'))],
                                            check=True, timeout=60, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                             pdf = Path(temp_dir) / (stem + '.pdf')
                             if not pdf.exists():

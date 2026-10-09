@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
+from .tool_paths import configured_tool
 from . import db
 from .demo import demonstration
 from .engine import calculate, RULE_VERSION
@@ -436,7 +437,7 @@ def report(cid:str,kind:str,version:int|None=None,u=Depends(user)):
         if not path.exists():
             try:
                 with tempfile.TemporaryDirectory(dir=exports) as folder:
-                    subprocess.run(['soffice',f'-env:UserInstallation={Path(folder).as_uri()}/profile','--headless','--convert-to','pdf','--outdir',folder,str(docpath)],
+                    subprocess.run([configured_tool('soffice') or 'soffice',f'-env:UserInstallation={Path(folder).as_uri()}/profile','--headless','--convert-to','pdf','--outdir',folder,str(docpath)],
                         check=True,timeout=60,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                     pdf=Path(folder)/(stem+'.pdf')
                     if not pdf.exists():raise RuntimeError('Nem keletkezett PDF.')
