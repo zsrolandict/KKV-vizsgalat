@@ -45,13 +45,21 @@ def xlsx_report(data, calc, meta):
                         evidence_text(row['evidence']), '\n'.join(row['assumptions']), '\n'.join(row['missing']), '\n'.join(row['signals'])])
     details.freeze_panes = 'C2'
     details.auto_filter.ref = details.dimensions
+    computations = wb.create_sheet('Befolyásszámítás')
+    computations.append(['Cég A', 'Cég B', 'Jogosult', 'Célcég', 'Befolyás', 'Többség igazolt', 'Joghely', 'Tényazonosítók'])
+    actor_names = {x.id: x.name for x in [*data.companies, *data.persons]}
+    for row in calc['rows']:
+        for value in row.get('influence_calculations', []):
+            computations.append([row['first_name'], row['second_name'], actor_names[value['owner']],
+                                 actor_names[value['company']], value['value'], 'Igen' if value['majority'] else 'Nem',
+                                 value['basis'], ', '.join(value['fact_ids'])])
     facts = wb.create_sheet('Szavazati források')
     names = {x.id: x.name for x in [*data.companies, *data.persons]}
-    facts.append(['Tulajdonos', 'Célcég', 'Tőke (%)', 'Szavazati mód', 'Szavazat (%) / feltétel', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Forrás', 'Indok'])
+    facts.append(['Tulajdonos', 'Célcég', 'Tőke (%)', 'Szavazati mód', 'Szavazat (%) / feltétel', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Forrás', 'Indok', 'Tényazonosító'])
     for fact in data.voting_facts:
         vote = '>50%' if fact.vote_bound == 'over_half' else fact.votes
         facts.append([names[fact.owner], names[fact.company], fact.capital, fact.vote_mode, vote,
-                      fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.evidence.source, fact.reason])
+                      fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.evidence.source, fact.reason, fact.id])
     profile = wb.create_sheet('Vizsgálati keret')
     for key, value in [('Ügyazonosító', meta['id']), ('Verzió', meta['version']), ('Állapot', meta['label']),
                        ('Vizsgálati cél', data.purpose), ('Vállalt vizsgálati kör', data.scope),
@@ -116,6 +124,9 @@ def word_report(data, calc, meta):
         doc.add_paragraph(row['reason'])
         if row['evidence']:
             doc.add_paragraph('Forrás: ' + evidence_text(row['evidence']))
+        actor_names = {x.id: x.name for x in [*data.companies, *data.persons]}
+        for value in row.get('influence_calculations', []):
+            doc.add_paragraph(f"Befolyásszámítás: {actor_names[value['owner']]} → {actor_names[value['company']]}: {value['value']} · {value['basis']} · Tények: {', '.join(value['fact_ids'])}")
         for label, values in (('Szavazati jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
             for value in values:
                 doc.add_paragraph(label + ': ' + value)

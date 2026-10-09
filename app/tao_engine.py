@@ -1,12 +1,9 @@
-"""Deterministic fact signals and expert decisions; no unverified legal inference.
-
-This first milestone does not implement the statutory indirect/family/BVK engine.
-Voting signals are not automatically converted to legal related-party results.
-"""
+"""Date-specific voting influence signals with expert legal decisions taking priority."""
 from collections import defaultdict
 from itertools import combinations
+from .tao_influence import influence_graph
 
-RULE_VERSION = 'TAO-munkafolyamat-1.0-szakertoi-dontes'
+RULE_VERSION = 'TAO-munkafolyamat-1.1-kozvetett-szavazat'
 RESULT_LABELS = {'related': 'Kapcsolt', 'not_related': 'Nem kapcsolt', 'undetermined': 'Nem dönthető el'}
 STAGE_LABELS = {
     'unreviewed': 'Iratellenőrzésre vár',
@@ -58,30 +55,41 @@ def calculate(data):
         else:
             chosen[edge] = best[0]
 
+    graph = influence_graph(chosen, conflicts, list(names), [c.id for c in data.companies], names, effective_vote)
+    facts_by_id = {f.id: f for f in chosen.values()}
     rows = []
     for a, b in combinations(data.companies, 2):
         key = tuple(sorted((a.id, b.id)))
         d = decisions.get(key)
         signals, missing, used = [], [], []
-        owners_a = {owner for owner, target in chosen if target == a.id}
-        owners_b = {owner for owner, target in chosen if target == b.id}
-        relevant = {(a.id, b.id), (b.id, a.id)}
-        relevant |= {(owner, target) for owner in owners_a & owners_b for target in (a.id, b.id)}
-        for edge in relevant:
-            if edge in conflicts:
-                missing.append(f'Eltérő szavazati adatok: {names[edge[0]]} → {names[edge[1]]}.')
-            fact = chosen.get(edge)
-            if not fact:
-                continue
-            value = effective_vote(fact)
-            used.append(fact.model_dump(mode='json'))
-            if value is None:
-                missing.append(f'Hiányzó szavazati arány: {names[edge[0]]} → {names[edge[1]]}.')
-            elif majority(value) and edge[0] in (a.id, b.id):
-                signals.append(f'{names[edge[0]]} → {names[edge[1]]}: {value}% szavazat.' if value != '>50' else f'{names[edge[0]]} → {names[edge[1]]}: szavazat >50%.')
-        for owner in owners_a & owners_b:
-            if majority(effective_vote(chosen[(owner, a.id)])) and majority(effective_vote(chosen[(owner, b.id)])):
-                signals.append(f'Közös többségi szavazati szereplő: {names[owner]}.')
+        calculations = []
+        dependencies = set()
+        for owner in names:
+            related_values = {}
+            for target in (a.id, b.id):
+                if owner == target:
+                    continue
+                value, fact_ids, errors = graph[(owner, target)]
+                if owner not in (a.id, b.id) and not fact_ids and not errors:
+                    continue
+                dependencies.update(fact_ids)
+                missing.extend(errors)
+                if value and value.high > 0:
+                    related_values[target] = value
+                    if owner in (a.id, b.id) or value.majority:
+                        calculations.append({'owner': owner, 'company': target,
+                                             'value': value.label, 'majority': value.majority,
+                                             'fact_ids': sorted(fact_ids),
+                                             'basis': 'Ptk. 8:2. § (4)'})
+                if owner in (a.id, b.id) and value and value.majority:
+                    kind = 'Közvetlen' if len(fact_ids) == 1 else 'Közvetlen és/vagy közvetett'
+                    signals.append(f'{kind} szavazati befolyás: {names[owner]} → {names[target]}: {value.label} (Ptk. 8:2. §).')
+            if owner not in (a.id, b.id) and all(target in related_values and related_values[target].majority for target in (a.id, b.id)):
+                signals.append(f'Közös közvetlen/közvetett többségi szavazati szereplő: {names[owner]} (Ptk. 8:2. §; Tao. 4. § 23. pont c)).')
+        used = [facts_by_id[fid].model_dump(mode='json') for fid in sorted(dependencies)]
+        for target in {facts_by_id[fid].company for fid in dependencies} - {a.id, b.id}:
+            if pending[target]:
+                missing.append(f'{names[target]}: a köztes cég hiányzó kezdőnapú tényét a vizsgálati napra ellenőrizni kell.')
         for cid in (a.id, b.id):
             if pending[cid]:
                 missing.append(f'{names[cid]}: a hiányzó kezdőnapú tények vizsgálati napi fennállása nincs megerősítve.')
@@ -125,7 +133,7 @@ def calculate(data):
             'basis': d.basis if d else '', 'reason': explanation,
             'evidence': d.evidence.model_dump(mode='json') if d else {},
             'signals': signals, 'missing': [*missing, *([d.missing] if d and d.missing else [])],
-            'assumptions': assumptions, 'facts': used, 'confirmed': bool(d and d.confirmed),
+            'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'confirmed': bool(d and d.confirmed),
         })
     counts = {value: sum(r['result'] == value for r in rows) for value in RESULT_LABELS}
     stages = {value: sum(r['stage'] == value for r in rows) for value in STAGE_LABELS}
@@ -134,4 +142,4 @@ def calculate(data):
             'complete': counts['undetermined'] == 0,
             'law_profile_present': bool(data.law_date and data.law_source),
             'mode': 'expert_decisions',
-            'note': 'A szavazati jelzések nem automatikus Tao-minősítések. A jogi eredményt a szakértő rögzíti.'}
+            'note': 'A közvetlen és közvetett szavazati jelzések Ptk. 8:2. § szerinti számítások; a teljes Tao-jogi eredményt a szakértő rögzíti.'}

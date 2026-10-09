@@ -74,6 +74,28 @@ def main():
                     assert Path(download.value.path()).stat().st_size>1000
                     page.goto(URL+kkv_link);page.get_by_role('heading',name='Böngészőteszt · ellenőrzött cégnév',exact=True).wait_for()
                     assert page.get_by_text('Előzetes eredmény',exact=False).count()>0
+                    chain = {'title':'Közvetett befolyás böngészőteszt','as_of':'2025-12-31',
+                             'companies':[{'id':v,'name':v.upper()} for v in ['a','b','c']],
+                             'voting_facts':[{'id':str(i),'owner':owner,'company':target,'capital':'60',
+                                              'valid_from':'2024-01-01','evidence':{'source':'Fiktív szavazati forrás'}}
+                                             for i,(owner,target) in enumerate([('a','b'),('b','c')])]}
+                    response=context.request.post(URL+'/api/tao/cases',data={'data':chain},headers={'X-CSRF-Token':setup.json()['csrf']})
+                    assert response.status==200,response.text()
+                    page.goto(URL+'/tao?case='+response.json()['id'])
+                    page.get_by_role('heading',name=chain['title'],exact=True).wait_for()
+                    page.locator('.matrix [data-action=pair][data-index="1"]').first.click()
+                    detail=page.locator('#pair-detail')
+                    assert 'A → C: 60%' in detail.inner_text(),detail.inner_text()
+                    assert 'A → B' in detail.inner_text() and 'B → C' in detail.inner_text()
+                    for width in [360,390,768,1366,1440]:
+                        page.set_viewport_size({'width':width,'height':1000})
+                        assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),f'Influence overflow at {width}'
+                    from openpyxl import load_workbook
+                    from io import BytesIO
+                    export=context.request.get(URL+'/api/tao/cases/'+response.json()['id']+'/report/xlsx')
+                    book=load_workbook(BytesIO(export.body()))
+                    assert 'Befolyásszámítás' in book.sheetnames
+                    assert any(row[2]=='A' and row[3]=='C' and row[4]=='60%' for row in book['Befolyásszámítás'].iter_rows(min_row=2,values_only=True))
                     assert not errors,errors
                     print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'browser_errors':errors}))
                     browser.close()

@@ -33,13 +33,14 @@ A böngészős működést és a PDF-importot Linuxon ellenőriztük. A Windowso
 - Cégjegyzékszám alapú cégazonosság és a cégiratok névváltozatai. A természetes személy névazonossága jelölt; azonosságot és rokonságot szakértőnek kell igazolnia.
 - Ismeretlen arány üresen marad. Az „50% feletti” szavazat nem kap kitalált számot. Az OPTEN gyűjtött „befolyás” nem válik automatikusan tulajdonrésszé.
 - Tulajdon = szavazat jelölt feltételezés; külön dokumentált szavazat és indokolt szakértői felülbírálat is adható. A Tao-tényjelzésekben a szakértői adat élvez elsőbbséget.
+- Közvetlen és közvetett szavazati befolyás számítása a Ptk. 8:2. § (4) szerint: a köztes vállalkozásban több mint 50% szavazat teljes beszámítást eredményez, pontosan 50% még arányos szorzást. Több útvonal és közvetlen szavazat összeadódik. A dokumentált >50% jelzésből nem képezünk pontos százalékot. A számítás a felületen és a Word/Excel-exportban tényazonosítókkal követhető. Körkörös, ütköző, ismeretlen vagy 100% fölé összegződő adatokból nem keletkezik automatikus minősítés.
 - Érvényesség és cégbírósági bejegyzés/törlés külön mező. A Tao végdátum kizáró; a korábbi KKV-adatmodellbe ez egy nappal korábbi, befoglaló végdátummal kerül. Hiányzó kezdőnapból nem képzünk visszamenőleges KKV-tulajdoni sort.
 - A PDF létszáma referenciaként jelenik meg. A kézi átemelés nem igazolja az éves módszertant; azt a KKV-vizsgálatban külön meg kell erősíteni. A pénzügyi értékek ezer forintról pontosan egyszer kerülnek forintra váltásra.
 - Elkülönített, felhasználóhoz kötött importcsomag; forrásfájlok, hash, ellenőrzési pillanatkép és napló megőrzése. Külön jóváhagyás, verziók és Word/PDF/Excel Tao-export.
 
 ## Határok és következő lépések
 
-A Tao-mátrix jogi minősítése indokolt szakértői döntésekből áll. A közvetett befolyás, rokonság, vezetői irányítás, BVK és speciális Tao-jogalapok teljes automatikus motorja még nincs implementálva. A vezetői jelöltek az importellenőrzésben és a forrásokban szerepelnek; nem keletkeztetnek automatikus kapcsoltságot. A transzferár-kötelezettség teljes vizsgálata külön fejlesztési lépés. Lásd: [jogi források](jogi-forrasok.md).
+A Tao-mátrix jogi minősítése indokolt szakértői döntésekből áll. A közvetlen/közvetett szavazati számítás már működik, és kapcsoltsági jelzést ad; önmagában nem végleges Tao-minősítés. A rokonság, meghatározó befolyási jogok, vezetői irányítás, BVK és speciális Tao-jogalapok teljes automatikus motorja még nincs implementálva. A körkörös hálók szakértői számítást igényelnek. A vezetői jelöltek az importellenőrzésben és a forrásokban szerepelnek; nem keletkeztetnek automatikus kapcsoltságot. A transzferár-kötelezettség teljes vizsgálata külön fejlesztési lépés. Lásd: [jogi források](jogi-forrasok.md).
 
 Az import jelenleg új tervezetet hoz létre. Meglévő ügyhöz ismételt PDF-import és mezőnkénti összehasonlítás még fejlesztendő. Az új dokumentum hagyományos feltöltése a Tao-ügyben új, ellenőrizendő verziót készít; a korábban jóváhagyott pillanatkép megmarad.
 
