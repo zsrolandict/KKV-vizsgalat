@@ -30,7 +30,7 @@ class Range:
         return f'{self.low:f}–{self.high:f}%' + (' (alsó határ kizáró)' if self.open_low else '')
 
 
-def influence_graph(chosen, conflicts, actors, companies, names, effective_vote):
+def influence_graph(chosen, conflicts, actors, companies, names, effective_vote, sources=None):
     """Return source/target contributions, dependencies and unresolved reasons."""
     incoming, outgoing = defaultdict(list), defaultdict(set)
     edges = set(chosen) | set(conflicts)
@@ -58,20 +58,20 @@ def influence_graph(chosen, conflicts, actors, companies, names, effective_vote)
     results = {}
     with localcontext() as context:
         context.prec = 1000  # Long minority chains must not round up to the threshold.
-        for source in actors:
-            reachable, stack = set(), [source]
+        for source, roots in (sources or {actor: {actor} for actor in actors}).items():
+            reachable, stack = set(), list(roots)
             while stack:
                 for target in outgoing[stack.pop()]:
                     if target not in reachable:
                         reachable.add(target)
                         stack.append(target)
-            values = {source: (Range(HUNDRED, HUNDRED), set(), [])}
+            values = {member: (Range(HUNDRED, HUNDRED), set(), []) for member in roots}
             for target in ordered:
-                if target == source or target not in reachable:
+                if target in roots or target not in reachable:
                     continue
                 low, high, open_low, used, missing = ZERO, ZERO, False, set(), []
                 for owner in incoming[target]:
-                    if owner != source and owner not in reachable:
+                    if owner not in roots and owner not in reachable:
                         continue
                     edge = (owner, target)
                     fact = chosen.get(edge)

@@ -166,6 +166,26 @@ class PDFAPITests(unittest.TestCase):
         with TestClient(app) as client:
             client.post('/api/auth/login',json=dict(username='client',password=self.password))
             self.assertEqual(client.get(f"/api/pdf/batches/{b['id']}").status_code,403)
+    def test_family_sources_and_recheck_preserve_previous_snapshot(self):
+        from tests.test_tao_family import assessment
+        raw=assessment().model_dump(mode='json')
+        created=self.client.post('/api/tao/cases',json={'data':raw},headers=self.h)
+        self.assertEqual(created.status_code,200,created.text);cid=created.json()['id']
+        uploaded=self.client.post(f'/api/tao/cases/{cid}/documents',files={'file':('nyilatkozat.txt',b'Family evidence','text/plain')},headers=self.h)
+        self.assertEqual(uploaded.status_code,200,uploaded.text)
+        current=self.client.get('/api/tao/cases/'+cid).json()
+        self.assertFalse(current['data']['family_facts'][0]['confirmed'])
+        previous=self.client.get(f'/api/tao/cases/{cid}/versions/1').json()
+        self.assertTrue(previous['data']['family_facts'][0]['confirmed'])
+        family=current['data']['family_facts'][0]
+        family['confirmed']=True;family['evidence']['document_id']=uploaded.json()['id']
+        updated=self.client.put('/api/tao/cases/'+cid,json={'data':current['data'],'version':current['version']},headers=self.h)
+        self.assertEqual(updated.status_code,200,updated.text)
+        current=self.client.get('/api/tao/cases/'+cid).json()
+        current['data']['family_facts'][0]['evidence']['document_id']='foreign-document'
+        rejected=self.client.put('/api/tao/cases/'+cid,json={'data':current['data'],'version':current['version']},headers=self.h)
+        self.assertEqual(rejected.status_code,422)
+
     def test_partial_tao_approval_and_immutable_snapshot(self):
         d=tao().model_dump(mode='json');d.update(scope='A és B, nyilatkozat nélkül',law_date='2024-12-31',law_source='Szakértői jogforrás')
         cid=self.client.post('/api/tao/cases',json={'data':d},headers=self.h).json()['id']

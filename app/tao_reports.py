@@ -7,6 +7,7 @@ from docx.shared import Cm, Pt, RGBColor
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
+from .tao_models import FAMILY_LABELS
 from .tao_engine import RESULT_LABELS
 
 
@@ -50,7 +51,7 @@ def xlsx_report(data, calc, meta):
     actor_names = {x.id: x.name for x in [*data.companies, *data.persons]}
     for row in calc['rows']:
         for value in row.get('influence_calculations', []):
-            computations.append([row['first_name'], row['second_name'], actor_names[value['owner']],
+            computations.append([row['first_name'], row['second_name'], value.get('owner_name') or actor_names[value['owner']],
                                  actor_names[value['company']], value['value'], 'Igen' if value['majority'] else 'Nem',
                                  value['basis'], ', '.join(value['fact_ids'])])
     facts = wb.create_sheet('Szavazati források')
@@ -60,6 +61,12 @@ def xlsx_report(data, calc, meta):
         vote = '>50%' if fact.vote_bound == 'over_half' else fact.votes
         facts.append([names[fact.owner], names[fact.company], fact.capital, fact.vote_mode, vote,
                       fact.valid_from, fact.valid_to, fact.reviewed_as_of, fact.evidence.source, fact.reason, fact.id])
+    relatives = wb.create_sheet('Rokonsági források')
+    relatives.append(['Első személy', 'Második személy', 'Viszony', 'Kezdet', 'Vége (kizáró)', 'Ellenőrzött nap', 'Igazolt', 'Forrás / oldal', 'Tényazonosító'])
+    for fact in data.family_facts:
+        relatives.append([names[fact.first], names[fact.second], FAMILY_LABELS[fact.relationship],
+                          fact.valid_from, fact.valid_to, fact.reviewed_as_of,
+                          'Igen' if fact.confirmed else 'Nem', evidence_text(fact.evidence.model_dump(mode='json')), fact.id])
     profile = wb.create_sheet('Vizsgálati keret')
     for key, value in [('Ügyazonosító', meta['id']), ('Verzió', meta['version']), ('Állapot', meta['label']),
                        ('Vizsgálati cél', data.purpose), ('Vállalt vizsgálati kör', data.scope),
@@ -126,7 +133,9 @@ def word_report(data, calc, meta):
             doc.add_paragraph('Forrás: ' + evidence_text(row['evidence']))
         actor_names = {x.id: x.name for x in [*data.companies, *data.persons]}
         for value in row.get('influence_calculations', []):
-            doc.add_paragraph(f"Befolyásszámítás: {actor_names[value['owner']]} → {actor_names[value['company']]}: {value['value']} · {value['basis']} · Tények: {', '.join(value['fact_ids'])}")
+            doc.add_paragraph(f"Befolyásszámítás: {value.get('owner_name') or actor_names[value['owner']]} → {actor_names[value['company']]}: {value['value']} · {value['basis']} · Tények: {', '.join(value['fact_ids'])}")
+        for fact in row.get('family_facts', []):
+            doc.add_paragraph(f"Igazolt rokonság: {actor_names[fact['first']]} – {actor_names[fact['second']]} · {FAMILY_LABELS[fact['relationship']]} · {evidence_text(fact['evidence'])}")
         for label, values in (('Szavazati jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
             for value in values:
                 doc.add_paragraph(label + ': ' + value)

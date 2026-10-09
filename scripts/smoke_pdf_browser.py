@@ -96,8 +96,42 @@ def main():
                     book=load_workbook(BytesIO(export.body()))
                     assert 'Befolyásszámítás' in book.sheetnames
                     assert any(row[2]=='A' and row[3]=='C' and row[4]=='60%' for row in book['Befolyásszámítás'].iter_rows(min_row=2,values_only=True))
+                    family_data = {'title':'Rokonság böngészőteszt','as_of':'2025-12-31',
+                                   'companies':[{'id':v,'name':v.upper()} for v in ['a','b']],
+                                   'persons':[{'id':v,'name':v.upper()} for v in ['p','q']],
+                                   'voting_facts':[{'id':str(i),'owner':owner,'company':target,'capital':capital,
+                                                    'valid_from':'2024-01-01'}
+                                                   for i,(owner,target,capital) in enumerate([('p','a','45'),('q','a','6'),('p','b','45'),('q','b','6')])]}
+                    response=context.request.post(URL+'/api/tao/cases',data={'data':family_data},headers={'X-CSRF-Token':setup.json()['csrf']})
+                    assert response.status==200,response.text()
+                    family_id=response.json()['id']
+                    page.goto(URL+'/tao?case='+family_id)
+                    page.get_by_role('heading',name=family_data['title'],exact=True).wait_for()
+                    page.locator('.tabs [data-tab="data"]').click()
+                    page.get_by_role('button',name='Rokonság rögzítése',exact=True).click()
+                    form=page.locator('#editor-form')
+                    form.locator('[name=confirmed]').check()
+                    form.locator('[type=submit]').click()
+                    page.locator('#editor-error').wait_for()
+                    assert 'forrás' in page.locator('#editor-error').inner_text()
+                    form.locator('[name=source]').fill('Ellenőrzött házastársi nyilatkozat')
+                    form.locator('[type=submit]').click()
+                    page.locator('#editor').wait_for(state='hidden')
+                    page.locator('.tabs [data-tab="matrix"]').click()
+                    detail=page.locator('#pair-detail')
+                    assert 'P + Q → A: 51%' in detail.inner_text(),detail.inner_text()
+                    assert 'Ellenőrzött házastársi nyilatkozat' in detail.inner_text()
+                    for width in [360,390,768,1366,1440]:
+                        page.set_viewport_size({'width':width,'height':1000})
+                        assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),f'Family overflow at {width}'
+                    export=context.request.get(URL+'/api/tao/cases/'+family_id+'/report/xlsx')
+                    book=load_workbook(BytesIO(export.body()))
+                    assert any('Ellenőrzött házastársi nyilatkozat' in str(v) for r in book['Rokonsági források'] for v in [c.value for c in r])
+                    from docx import Document
+                    report=context.request.get(URL+'/api/tao/cases/'+family_id+'/report/docx')
+                    assert 'Igazolt rokonság: P – Q' in '\n'.join(p.text for p in Document(BytesIO(report.body())).paragraphs)
                     assert not errors,errors
-                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'browser_errors':errors}))
+                    print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'browser_errors':errors}))
                     browser.close()
             finally:
                 server.terminate()

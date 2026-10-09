@@ -2,8 +2,10 @@
 from collections import defaultdict
 from itertools import combinations
 from .tao_influence import influence_graph
+from .tao_family import family_groups
+from .tao_models import CLOSE_FAMILY_TYPES
 
-RULE_VERSION = 'TAO-munkafolyamat-1.1-kozvetett-szavazat'
+RULE_VERSION = 'TAO-munkafolyamat-1.2-igazolt-rokonsag'
 RESULT_LABELS = {'related': 'Kapcsolt', 'not_related': 'Nem kapcsolt', 'undetermined': 'Nem dönthető el'}
 STAGE_LABELS = {
     'unreviewed': 'Iratellenőrzésre vár',
@@ -56,6 +58,9 @@ def calculate(data):
             chosen[edge] = best[0]
 
     graph = influence_graph(chosen, conflicts, list(names), [c.id for c in data.companies], names, effective_vote)
+    families, family_limited, family_conflicts = family_groups(data, active)
+    family_graph = influence_graph(chosen, conflicts, list(names), [c.id for c in data.companies], names,
+                                   effective_vote, sources={f['id']: set(f['members']) for f in families}) if families else {}
     facts_by_id = {f.id: f for f in chosen.values()}
     rows = []
     for a, b in combinations(data.companies, 2):
@@ -86,6 +91,39 @@ def calculate(data):
                     signals.append(f'{kind} szavazati befolyás: {names[owner]} → {names[target]}: {value.label} (Ptk. 8:2. §).')
             if owner not in (a.id, b.id) and all(target in related_values and related_values[target].majority for target in (a.id, b.id)):
                 signals.append(f'Közös közvetlen/közvetett többségi szavazati szereplő: {names[owner]} (Ptk. 8:2. §; Tao. 4. § 23. pont c)).')
+        family_evidence = []
+        for group in families:
+            family_values, family_used, errors = {}, set(), []
+            for target in (a.id, b.id):
+                value, fact_ids, problems = family_graph[(group['id'], target)]
+                family_used.update(fact_ids)
+                errors.extend(problems)
+                if value and value.high > 0:
+                    family_values[target] = value
+                    calculations.append({'owner': group['id'], 'owner_name': group['name'],
+                                         'company': target, 'value': value.label, 'majority': value.majority,
+                                         'fact_ids': sorted(fact_ids), 'members': group['members'],
+                                         'basis': 'Ptk. 8:1. § (1) 1.; 8:2. § (4)–(5); Tao. 4. § 23. c)'})
+            if family_used or errors:
+                dependencies.update(family_used)
+                missing.extend(errors)
+                family_evidence.extend(group['facts'])
+            if all(target in family_values and family_values[target].majority for target in (a.id, b.id)):
+                signals.append(f'Igazolt közeli hozzátartozók összeszámított többségi szavazata: {group["name"]} → {a.name}: {family_values[a.id].label}; {b.name}: {family_values[b.id].label}.')
+        for fact in data.family_facts:
+            if fact.relationship in CLOSE_FAMILY_TYPES and not (fact.confirmed and active(fact, data.as_of)):
+                # Historical ended/future relations are not outstanding current facts.
+                if (fact.valid_to and fact.valid_to <= data.as_of) or (fact.valid_from and fact.valid_from > data.as_of):
+                    continue
+                if any(graph[(person, target)][1] or graph[(person, target)][2]
+                       for person in (fact.first, fact.second) for target in (a.id, b.id)):
+                    missing.append(f'{names[fact.first]} – {names[fact.second]}: a rokonság vagy vizsgálati napi fennállása nincs igazolva.')
+        for first, second in family_conflicts:
+            if any(graph[(person, target)][1] or graph[(person, target)][2]
+                   for person in (first, second) for target in (a.id, b.id)):
+                missing.append(f'{names[first]} – {names[second]}: eltérő igazolt rokonsági adatok; forrásellenőrzés szükséges.')
+        if family_limited:
+            missing.append('A rokonsági háló túl összetett; a teljes csoportosításhoz szakértői felülvizsgálat szükséges.')
         used = [facts_by_id[fid].model_dump(mode='json') for fid in sorted(dependencies)]
         for target in {facts_by_id[fid].company for fid in dependencies} - {a.id, b.id}:
             if pending[target]:
@@ -133,7 +171,7 @@ def calculate(data):
             'basis': d.basis if d else '', 'reason': explanation,
             'evidence': d.evidence.model_dump(mode='json') if d else {},
             'signals': signals, 'missing': [*missing, *([d.missing] if d and d.missing else [])],
-            'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'confirmed': bool(d and d.confirmed),
+            'assumptions': assumptions, 'facts': used, 'influence_calculations': calculations, 'family_facts': list({f['id']: f for f in family_evidence}.values()), 'confirmed': bool(d and d.confirmed),
         })
     counts = {value: sum(r['result'] == value for r in rows) for value in RESULT_LABELS}
     stages = {value: sum(r['stage'] == value for r in rows) for value in STAGE_LABELS}

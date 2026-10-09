@@ -91,6 +91,38 @@ class PairDecision(Model):
         return self
 
 
+FAMILY_LABELS = {
+    'spouse': 'Házastárs', 'lineal': 'Egyeneságbeli rokon',
+    'adoptive': 'Örökbefogadó szülő / örökbefogadott gyermek',
+    'step': 'Mostohaszülő / mostohagyermek', 'foster': 'Nevelőszülő / nevelt gyermek',
+    'sibling': 'Testvér (féltestvér is)', 'partner': 'Élettárs – nem közeli hozzátartozó',
+    'other': 'Egyéb hozzátartozó – külön szakértői vizsgálat',
+}
+CLOSE_FAMILY_TYPES = frozenset(FAMILY_LABELS) - {'partner', 'other'}
+
+
+class FamilyFact(Model):
+    id: str = Field(min_length=1, max_length=80)
+    first: str
+    second: str
+    relationship: Literal['spouse', 'lineal', 'adoptive', 'step', 'foster', 'sibling', 'partner', 'other']
+    valid_from: date | None = None
+    valid_to: date | None = None
+    reviewed_as_of: date | None = None
+    evidence: Evidence = Field(default_factory=Evidence)
+    confirmed: bool = False
+
+    @model_validator(mode='after')
+    def validate_family(self):
+        if self.first == self.second:
+            raise ValueError('Két külön természetes személy szükséges.')
+        if self.valid_from and self.valid_to and self.valid_to <= self.valid_from:
+            raise ValueError('A kizáró végdátumnak a kezdőnap után kell lennie.')
+        if self.confirmed and not self.evidence.source.strip():
+            raise ValueError('Igazolt rokonsághoz forrás / nyilatkozat szükséges.')
+        return self
+
+
 class TaoAssessment(Model):
     schema_version: Literal[1] = 1
     title: str = Field(min_length=1, max_length=200)
@@ -104,6 +136,7 @@ class TaoAssessment(Model):
     companies: list[TaoCompany] = Field(min_length=2, max_length=60)
     persons: list[Person] = Field(default_factory=list, max_length=250)
     voting_facts: list[VotingFact] = Field(default_factory=list, max_length=2000)
+    family_facts: list[FamilyFact] = Field(default_factory=list, max_length=1000)
     decisions: list[PairDecision] = Field(default_factory=list, max_length=1770)
 
     @model_validator(mode='after')
@@ -117,6 +150,12 @@ class TaoAssessment(Model):
                 raise ValueError('A szavazati tény ismeretlen szereplőre mutat.')
         if len({f.id for f in self.voting_facts}) != len(self.voting_facts):
             raise ValueError('Ismétlődő tényazonosító.')
+        person_ids = {p.id for p in self.persons}
+        if len({f.id for f in self.family_facts}) != len(self.family_facts):
+            raise ValueError('Ismétlődő rokonsági tényazonosító.')
+        for fact in self.family_facts:
+            if fact.first not in person_ids or fact.second not in person_ids:
+                raise ValueError('Rokonság csak rögzített természetes személyek között adható meg.')
         keys = []
         for decision in self.decisions:
             if decision.first not in cids or decision.second not in cids:
