@@ -49,7 +49,7 @@ echo.
 echo A program cime: http://127.0.0.1:8000
 echo Az ablak maradjon nyitva a hasznalat alatt. Leallitas: Ctrl+C.
 echo.
-".venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+".venv\Scripts\python.exe" -m app.windows_start
 if errorlevel 1 (
     echo Az inditas nem sikerult. Ha a 8000-es port foglalt, allitsd le a korabbi peldanyt.
     pause

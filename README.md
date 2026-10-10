@@ -2,6 +2,10 @@
 
 Magyar nyelvű, működő szakértői webalkalmazás KKV-vizsgálatokhoz: cégháló, éves adatok, pontos számítás, verziók, jóváhagyás és Word/PDF állásfoglalás. A csatolt munkafüzet két éves példáját reprodukálja, és javítja a feltárt 25%-os, összegzési és pénzügyi határértékhibákat.
 
+## Új tesztmodul
+
+Az OPTEN PDF-ek drag-and-drop importja szerkeszthető ellenőrző nézetet nyit; ugyanabból a feltöltésből külön KKV- és Tao-tervezet készül. [Kipróbálás és a tesztverzió határai](docs/pdf-tao-tesztverzio.md), [jogi források állapota](docs/jogi-forrasok.md).
+
 ## Indítás
 
 Python 3.11+ szükséges. PDF-exporthoz a `soffice` paranccsal elérhető LibreOffice is kell. A jelenlegi felhőkörnyezetben ezek rendelkezésre állnak.
@@ -16,13 +20,9 @@ Alapértelmezett cím: `http://127.0.0.1:8000`. Az első megnyitáskor **saját 
 
 A felhőfeladat meglévő checkoutját kell használni. Új Git worktree létrehozása a futtatáshoz nem szükséges.
 
-Windows alatt a virtuális környezet és az indítás megfelelője:
+Windows alatt a letöltött csomag gyökerében kattints duplán az **`INDITAS_WINDOWS.bat`** (az `Inditas-Windows.cmd` is ezt indítja) fájlra. Python 3.12 szükséges; az indító létrehozza a virtuális környezetet és ellenőrzi a függőségeket. Az első indításkor add meg a kicsomagolt Poppler mappájának teljes útvonalát. A `pdftotext.exe` helyét az alkalmazás a saját `data/tool-paths.json` fájljába menti, így új PowerShell-ablak esetén is működik a PDF-import. A böngésző automatikusan megnyílik; az indító ablak maradjon nyitva. Leállítás: Ctrl+C.
 
-```powershell
-py -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
+Frissítés előtt állítsd le a korábbi kiszolgálót. Másold az új csomag tartalmát a korábbi alkalmazásmappába, a programfájlok felülírásával. **A saját `data` és `.venv` mappát őrizd meg**: előbbi tartalmazza a fiókokat, ügyeket és a PDF-kiolvasó beállítását. Az indító ugyanabban a mappában legyen, ahol az `app` és a `requirements.txt`. Frissítés után a böngészőben Ctrl+F5.
 
 ## Napi munkafolyamat
 
@@ -34,13 +34,18 @@ py -m venv .venv
 6. Mentés: új verzió és friss számítás készül. Az „Ellenőrzés” nézet mutatja a véglegesítést akadályozó hiányokat.
 7. Szakértői jóváhagyás után a Word/PDF állásfoglalás átadható. Jóváhagyás előtt az export „TERVEZET”.
 
-Az ellenőrzések minden nyitott kérdésnél megmutatják a hiányzó tényt, annak jelentőségét és a szükséges teendőt. A **Rendezés** gomb az érintett cég, kapcsolat vagy beszámoló megfelelő évi adatához visz; az azonos kérdés érintett évei egy kártyán jelennek meg. A szerkesztőablakok **Mentés és újraszámítás** gombja az ügyet is menti, frissíti az ellenőrzéseket, és megmutatja a beszámítás változását. A táblázatban közvetlenül beírt éves adatokhoz továbbra is a fő **Mentés** gomb használható. Hiányzó indok vagy ellenőrzés esetén a kérdés megmarad, konkrét útmutatással.
+Az ellenőrzések minden nyitott kérdésnél megmutatják a hiányzó tényt, annak jelentőségét és a szükséges teendőt. A **Rendezés** gomb az érintett cég, kapcsolat vagy beszámoló megfelelő évi adatához visz; alapból az adott év teendői jelennek meg. A másik év külön választható, és a „Minden vizsgált év” nézet együtt mutatja őket. A döntés ellenőrzése az adott évre vonatkozik; az összes évre külön jelölőnégyzet adható meg. A szerkesztőablakok **Mentés és újraszámítás** gombja az ügyet is menti, frissíti az ellenőrzéseket, és megmutatja a beszámítás változását. A táblázatban közvetlenül beírt éves adatokhoz továbbra is a fő **Mentés** gomb használható. Hiányzó indok vagy ellenőrzés esetén a kérdés megmarad, konkrét útmutatással.
 
 A rokonsági viszony mellett láthatók az érintett cégpárok és kapcsolati döntéseik. A rokonság rögzítése önmagában nem változtatja meg az összeszámítást; a közös fellépés és a releváns piaci kapcsolat külön igazolt döntést igényel.
 
 A **Cégháló** nézetben a szereplők húzással vagy nyílbillentyűkkel mozgathatók, a nyilak együtt mozognak velük. Az **Elrendezés mentése** az ügy új verziójában tárolja a pozíciókat; az elrendezés az évek közötti váltáskor is megmarad. Az **Automatikus elrendezés** visszaállítja az alaphelyzetet, amelyet külön el kell menteni. A háló SVG és PNG formátumban letölthető az aktuális pozíciókkal, minősítésekkel és hálóidőponttal. A képen jelöljük a nem mentett adatokat és az előzetes minősítést.
 
 Az elemző adatot szerkeszt. Jóváhagyó szakértő és adminisztrátor véglegesíthet. A jóváhagyó külön megerősíti a pénzügyi forrásokat, a kapcsolati tényállást és az alkalmazandó jogszabályi időállapotot. A rendszerbeli jóváhagyás nem elektronikus aláírás.
+
+
+A **Tao-kapcsoltság** külön szolgáltatás a felső menüben (`/tao`). Az **Ellenőrzés** lapon ugyanaz a számláló szerepel a fülön, a kártyák felett és a mentési visszajelzésben. A minősítés, a forrásirat feldolgozása vagy a vizsgálati keret rendezése után a megfelelő kártya eltűnik. A „nem dönthető el” minősítés nyitott kérdés marad, részleges állásfoglalásban is.
+
+Tao-szerkesztés közben az újraszámítás szükségessége látszik; mentéskor új verzió, friss szavazati/irányítási számítás és változásmagyarázat készül. A forrástények változásakor a változatlan korábbi döntések megerősítése megszűnik, ismét ellenőrizni kell őket. A rokonsági mező melletti szöveg elmagyarázza az összeszámítás feltételeit. A Tao-cégháló húzható, billentyűzettel mozgatható, menthető és SVG/PNG formátumban letölthető; a mentett elrendezés a Word/PDF-állásfoglalásban is megjelenik. Az ábra és a számított jelzések nem helyettesítik a cégpáronként indokolt jogi döntést.
 
 ## Generált állásfoglalás
 
@@ -136,3 +141,5 @@ tests/            Számítási és API-tesztek
 ```
 
 A felület buildlépés nélkül fut. Több szerverpéldányos, nagyobb szervezeti telepítéshez PostgreSQL és közös dokumentumtároló bevezetése külön üzemeltetési bővítés.
+
+Helyi biztonsági mentés, visszaállítás és ZIP-ből frissítés: [Windows-karbantartás](docs/windows-karbantartas.md).

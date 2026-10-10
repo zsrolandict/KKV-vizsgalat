@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
+from .tool_paths import configured_tool
 from . import db
 from .demo import demonstration
 from .engine import calculate, RULE_VERSION
@@ -311,7 +312,12 @@ def approve(cid:str,payload:Approval,u=Depends(reviewer)):
         con.execute('BEGIN IMMEDIATE');row=visible_case(con,cid,u)
         if row['version']!=payload.version:raise HTTPException(409,'Az ügy verziója megváltozott.')
         if row['status']=='approved':raise HTTPException(409,'Ez a verzió már jóváhagyott.')
-        calc=calculate(Assessment.model_validate_json(row['data']))
+        data=Assessment.model_validate_json(row['data'])
+        if not data.law_date or not data.law_source:
+            raise HTTPException(422,'A vizsgálat adatainál rögzítse az ellenőrzött jogi időállapotot és forrását, a vizsgált évekre is kiterjedően.')
+        if data.law_date > data.as_of and not data.law_applicability:
+            raise HTTPException(422,'A jogi forrás időállapota későbbi a vizsgálatnál. Indokolja a történeti alkalmazhatóságát, vagy válassza ki a megfelelő korábbi forrást.')
+        calc=calculate(data)
         if not calc['ready']:raise HTTPException(422,{'message':'A tisztázandó kérdések miatt az ügy nem véglegesíthető.','blockers':calc['blockers']})
         pending=con.execute('SELECT count(*) FROM intake WHERE case_id=? AND reviewed=0',(cid,)).fetchone()[0]
         if pending:raise HTTPException(422,'Feldolgozatlan ügyfélválaszok vannak. Előbb ellenőrizze ezeket.')
@@ -450,7 +456,7 @@ def report(cid:str,kind:str,version:int|None=None,u=Depends(user)):
         if not path.exists():
             try:
                 with tempfile.TemporaryDirectory(dir=exports) as folder:
-                    subprocess.run(['soffice',f'-env:UserInstallation={Path(folder).as_uri()}/profile','--headless','--convert-to','pdf','--outdir',folder,str(docpath)],
+                    subprocess.run([configured_tool('soffice') or 'soffice',f'-env:UserInstallation={Path(folder).as_uri()}/profile','--headless','--convert-to','pdf','--outdir',folder,str(docpath)],
                         check=True,timeout=60,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                     pdf=Path(folder)/(stem+'.pdf')
                     if not pdf.exists():raise RuntimeError('Nem keletkezett PDF.')
@@ -482,6 +488,11 @@ def mnb(day:date,u=Depends(staff)):
         raise HTTPException(502,'Az MNB-forrás jelenleg nem érhető el. Rögzítse az árfolyamot és a hivatalos forrást kézzel, majd jelölje az ellenőrzést.')
 
 
+from .tao_api import build_router as tao_router
+
+app.include_router(tao_router(user, staff, reviewer))
+from .pdf_api import build_router as pdf_router
+app.include_router(pdf_router(staff))
 app.mount('/static',StaticFiles(directory=STATIC),name='static')
 
 

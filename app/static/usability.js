@@ -18,6 +18,8 @@ function refreshApprovalAvailability(){
   const checked=['financials','relationships','rules'].filter(n=>form.elements[n].checked).length;
   const reasons=[];
   if(!canApprove())reasons.push('Jóváhagyó szakértői jogosultság szükséges.');
+  if(!S.data.law_date||!S.data.law_source)reasons.push('Rögzítsd az Ügyadatoknál a jogi időállapotot és a forrást.');
+  if(S.data.law_date>S.data.as_of&&!S.data.law_applicability)reasons.push('Indokold a későbbi jogi forrás történeti alkalmazhatóságát.');
   if(S.dirty)reasons.push('Mentsd a módosításokat az újraszámításhoz.');
   if(!S.calc.ready)reasons.push(`Rendezd a ${groupedChecks().length} nyitott ellenőrzési kérdést.`);
   if(S.pendingIntake===null)reasons.push('Az ügyfélválaszok ellenőrzése folyamatban.');

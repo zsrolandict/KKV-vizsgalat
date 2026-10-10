@@ -5,6 +5,7 @@ from app.models import Assessment
 def sample():
     return Assessment.model_validate({
       'title':'Tesztvizsgálat','client':'Teszt ügyfél','as_of':'2026-10-06',
+      'law_date':'2026-10-06','law_source':'Fiktív ellenőrzött jogi tesztforrás, 2024/2025-ös adatok alkalmazása ellenőrizve',
       'root':'a','years':[2024,2025],
       'companies':[{'id':'a','name':'Alfa Kft.'}],
       'financials':[{'company':'a','year':y,'employees':'2','turnover':'1000000','balance':'2000000',

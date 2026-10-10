@@ -11,3 +11,7 @@ fi
 if ! command -v soffice >/dev/null 2>&1; then
   printf '%s\n' 'A Word-export elérhető. A PDF-exporthoz telepítse a LibreOffice-ot (soffice).' >&2
 fi
+
+if ! command -v pdftotext >/dev/null 2>&1; then
+  printf '%s\n' 'Az OPTEN PDF-importhoz telepítse a poppler-utils csomagot (pdftotext).' >&2
+fi

@@ -11,7 +11,8 @@ from pathlib import Path
 from urllib.request import urlopen
 from docx import Document
 from playwright.sync_api import sync_playwright, expect
-from browser_guided import validate_guided_workflow
+from browser_guided import validate_guided_workflow, validate_year_confirmation
+from browser_tao import validate_tao_workflow
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'test-results'
@@ -41,6 +42,8 @@ def main():
                 page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
                 page.goto(URL);page.locator('#auth-form').wait_for()
                 page.screenshot(path=str(OUT/'01-elso-belepes.png'),full_page=True)
+                assert page.locator('.auth-brand').evaluate('(el)=>getComputedStyle(el).backgroundColor')=='rgb(242, 247, 248)'
+                assert 'DM Sans' in page.locator('body').evaluate('(el)=>getComputedStyle(el).fontFamily')
                 page.locator('[name=name]').fill('Teszt Szakértő')
                 page.locator('[name=username]').fill('expert')
                 page.locator('[name=password]').fill(password)
@@ -48,15 +51,27 @@ def main():
                 page.get_by_role('heading',name='Ügyeid, egy helyen.').wait_for()
                 try:
                     validate_guided_workflow(page,OUT)
+                    validate_year_confirmation(page)
+                    validate_tao_workflow(page,OUT)
+                    page.goto(URL)
+                    page.get_by_role("heading",name="Ügyeid, egy helyen.").wait_for()
                 except Exception:
                     page.screenshot(path=str(OUT/'guided-failure.png'),full_page=True)
                     # Report workflow state only; never log account or form credentials.
-                    print(page.evaluate('() => ({dirty:S.dirty,year:S.year,modal:S.modal?.kind,checks:S.calc?.blockers,financialSources:S.data?.financials.map(f=>({company:f.company,year:f.year,source:f.source})),errors:[...document.querySelectorAll(".toast.error, .modal-error:not(.hide)")].map(e=>e.textContent)})'))
+                    print(page.evaluate('() => typeof S === "undefined" ? {errors:[...document.querySelectorAll("#toast, #editor-error")].map(e=>e.textContent)} : ({dirty:S.dirty,year:S.year,modal:S.modal?.kind,checks:S.calc?.blockers,financialSources:S.data?.financials.map(f=>({company:f.company,year:f.year,source:f.source})),errors:[...document.querySelectorAll(".toast.error, .modal-error:not(.hide)")].map(e=>e.textContent)})'))
                     raise
+                for width in [360,390,768,1366,1440]:
+                    page.set_viewport_size({'width':width,'height':1000})
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'Overflow at {width}'
+                    page.screenshot(path=str(OUT/f'white-dashboard-{width}.png'))
                 page.locator('.hero [data-action=demo]').click()
                 page.locator('.result-card h2').wait_for()
                 assert page.locator('.result-card h2').inner_text()=='Középvállalkozás'
                 page.screenshot(path=str(OUT/'02-attekintes.png'),full_page=True)
+                for width in [360,390,768,1366,1440]:
+                    page.set_viewport_size({'width':width,'height':1000})
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),f'Case overflow at {width}'
+                    page.screenshot(path=str(OUT/f'white-case-{width}.png'))
                 page.locator('.tabs [data-action=tab][data-tab=calculation]').click()
                 page.locator('.calculation-total').wait_for()
                 assert '140,5' in page.locator('.calculation-total').inner_text()
@@ -71,6 +86,7 @@ def main():
                 page.screenshot(path=str(OUT/'05-mobil.png'),full_page=True)
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                 page.set_viewport_size({'width':1440,'height':1050})
+                if not page.locator('.sidebar [data-action=new-case]').is_visible():page.locator('.workspace-tools summary').click()
                 page.locator('.sidebar [data-action=new-case]').click()
                 page.locator('#modal-form [name=name]').fill('Böngészőteszt Kft.')
                 page.locator('#modal-form [name=title]').fill('Ellenőrzött mintavizsgálat')
@@ -98,6 +114,11 @@ def main():
                     page.locator('[data-rate=confirmed]').check()
                 page.locator('[data-action=save]').click()
                 expect(page.locator('[data-action=save]')).to_be_disabled(); expect(page.locator('#recalculation-notice')).to_be_empty(); assert page.locator('.tabs .tab-badge').count()==0
+                page.locator('.case-heading [data-action=case-settings]').click()
+                page.locator('#modal-form [name=law_date]').fill('2024-01-01')
+                page.locator('#modal-form [name=law_source]').fill('Böngészőteszt – fiktív ellenőrzött KKV jogi forrás 2024/2025')
+                page.locator('#modal-form [type=submit]').click()
+                expect(page.locator('[data-action=save]')).to_be_disabled()
                 page.locator('.tabs [data-action=tab][data-tab=review]').click()
                 page.locator('#approval-form').wait_for()
                 for name in ['financials','relationships','rules']:page.locator(f'#approval-form [name={name}]').check()
@@ -113,8 +134,10 @@ def main():
                 event.value.save_as(OUT/'smoke-allasfoglalas.pdf')
                 assert (OUT/'smoke-allasfoglalas.pdf').read_bytes().startswith(b'%PDF')
                 page.screenshot(path=str(OUT/'06-jovahagyott-allasfoglalas.png'),full_page=True)
+                if not page.locator('.sidebar [data-action=template]').is_visible():page.locator('.workspace-tools summary').click()
                 with page.expect_download() as event:page.locator('.sidebar [data-action=template]').click()
                 event.value.save_as(OUT/'adatbekeres.xlsx')
+                if not page.locator('.sidebar [data-action=users]').is_visible():page.locator('.workspace-tools summary').click()
                 page.locator('.sidebar [data-action=users]').click()
                 page.get_by_role('heading',name='Munkatársak és ügyfelek.').wait_for()
                 page.locator('[data-action=new-user]').click()

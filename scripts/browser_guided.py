@@ -5,7 +5,7 @@ from playwright.sync_api import expect
 
 def validate_guided_workflow(page, out):
     data={
-        'title':'Vezetett ellenőrzés','as_of':'2026-10-10','root':'a','years':[2024,2025],
+        'title':'Vezetett ellenőrzés','law_date':'2026-10-10','law_source':'Fiktív ellenőrzött jogi tesztforrás','as_of':'2026-10-10','root':'a','years':[2024,2025],
         'companies':[{'id':'a','name':'Vizsgált Alfa Kft.'},{'id':'b','name':'Béta & Társai <teszt>'}],
         'persons':[{'id':'p1','name':'Első tulajdonos'},{'id':'p2','name':'Második tulajdonos'}],
         'ownerships':[{'id':'o1','owner':'p1','company':'a','capital':'100','votes':'100','source':'Okirat'},
@@ -24,6 +24,7 @@ def validate_guided_workflow(page, out):
     expect(page.locator('#preliminary-calculation')).to_contain_text('rendezendő kérdés')
     expect(page.locator('.calculation-total')).to_contain_text('2')
     page.locator('#preliminary-calculation [data-action=tab]').click()
+    page.locator('#review-scope').select_option('all')
     check=page.locator('[data-check-code=relationship_missing][data-check-target=b]')
     expect(check).to_have_count(1)
     expect(check).to_contain_text('Miért szükséges?')
@@ -43,6 +44,7 @@ def validate_guided_workflow(page, out):
     page.locator('#modal-form [name=percent]').fill('30')
     page.locator('#modal-form [name=reason]').fill('Igazolt partnerkapcsolat')
     page.locator('#modal-form [name=confirmed]').check()
+    page.locator('#modal-form [name=all_years]').check()
     page.locator('#modal-form [type=submit]').click()
     expect(page.locator('[data-check-code=relation_unresolved]')).to_have_count(0)
     assert page.evaluate('S.calc.years.at(-1).totals.employees')=='5'
@@ -73,6 +75,7 @@ def validate_guided_workflow(page, out):
     page.locator('#modal-form [name=basis]').select_option('persons')
     page.locator('#modal-form [name=relation]').select_option('linked')
     expect(page.locator('#modal-form [name=acting_together]')).to_have_attribute('required','')
+    page.locator('#modal-form [name=all_years]').check()
     page.locator('#modal-form [name=acting_together]').fill('Igazolt közösen gyakorolt irányítás')
     page.locator('#modal-form [name=market]').fill('Azonos releváns piacon működnek')
     page.locator('#modal-form [type=submit]').click()
@@ -164,3 +167,39 @@ def validate_guided_workflow(page, out):
     page.screenshot(path=str(out/'10-rendezett-ellenorzes.png'),full_page=True)
     page.goto('http://127.0.0.1:8011/')
     page.get_by_role('heading',name='Ügyeid, egy helyen.').wait_for()
+
+
+def validate_year_confirmation(page):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
+    from tests.helpers import extended
+    data=extended([f'b{i}' for i in range(9)],[]).model_dump(mode='json')
+    data['decisions']=[{'id':f'd{i}','first':'a','second':f'b{i}','relation':'independent',
+        'reason':'Ellenőrzött önállóság','source':'Okirat','confirmed':False} for i in range(9)]
+    cid=page.evaluate('async data=>(await api("/cases",{method:"POST",body:{data}})).id',data)
+    page.goto(f'http://127.0.0.1:8011/#case/{cid}/review')
+    expect(page.locator('.tabs [data-tab=review] .tab-badge')).to_have_text('9')
+    expect(page.locator('[data-check-code=decision_review]')).to_have_count(9)
+    page.locator('[data-check-target=d0] [data-year="2025"]').click()
+    page.locator('#modal-form [name=confirmed]').check()
+    assert not page.locator('#modal-form [name=all_years]').is_checked()
+    page.locator('#modal-form [type=submit]').click()
+    expect(page.locator('#modal-form')).to_have_count(0)
+    expect(page.locator('.tabs [data-tab=review] .tab-badge')).to_have_text('8')
+    expect(page.locator('[data-check-code=decision_review]')).to_have_count(8)
+    expect(page.locator('.save-feedback')).to_contain_text('8')
+    page.reload();expect(page.locator('[data-check-code=decision_review]')).to_have_count(8)
+    page.locator('[data-action=review-year][data-year="2024"]').click()
+    expect(page.locator('.tabs [data-tab=review] .tab-badge')).to_have_text('9')
+    expect(page.locator('[data-check-code=decision_review]')).to_have_count(9)
+    # Complete each pair explicitly for both years; the list must eventually reach zero.
+    for i in range(9):
+        page.locator(f'[data-check-target=d{i}] [data-action=resolve-check]').click()
+        page.locator('#modal-form [name=all_years]').check()
+        page.locator('#modal-form [type=submit]').click()
+        expect(page.locator('#modal-form')).to_have_count(0)
+        expect(page.locator('[data-check-code=decision_review]')).to_have_count(8-i)
+    expect(page.locator('.tabs [data-tab=review] .tab-badge')).to_have_count(0)
+    page.locator('[data-action=review-year][data-year="2025"]').click()
+    expect(page.locator('[data-check-code=decision_review]')).to_have_count(0)

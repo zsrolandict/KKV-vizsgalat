@@ -66,6 +66,10 @@ def initialize():
           author TEXT NOT NULL REFERENCES users(id), message TEXT NOT NULL,
           created TEXT NOT NULL, reviewed INTEGER NOT NULL DEFAULT 0);
         ''')
+    from . import tao_db
+    tao_db.initialize()
+    from . import pdf_api
+    pdf_api.initialize()
 
 
 def audit(con, case_id, actor, action, details=''):

@@ -14,7 +14,7 @@ from .report_text import RELATIONS, hu, money, report_summary
 from .report_graph import graph_image
 
 # Increment when the format changes, so old cached exports refresh.
-REPORT_FORMAT_VERSION = '2'
+REPORT_FORMAT_VERSION = '3'
 GREEN, PALE, INK = '234B3F', 'EDF3E8', '28372E'
 
 
@@ -196,6 +196,7 @@ def word_report(data, calculation, metadata):
     for warning in calculation['warnings']: doc.add_paragraph(warning)
 
     doc.add_heading('9. Jogi keret és szakértői jóváhagyás', 1)
+    doc.add_paragraph(f'Ellenőrzött jogi időállapot: {data.law_date or "nincs rögzítve"}. Forrás: {data.law_source or "nincs rögzítve"}. Történeti alkalmazhatóság: {data.law_applicability or "nem igényel külön indokot"}.')
     doc.add_paragraph('Magyar profil: a 2004. évi XXXIV. törvény a kis- és középvállalkozásokról, fejlődésük támogatásáról. EU-profil: a 2003/361/EK ajánlás és a vizsgálat céljára alkalmazandó uniós rendelkezések. Az alkalmazandó időállapotot, kivételeket és a szabályok konkrét ügyre való alkalmazhatóságát a jóváhagyó szakértő ellenőrzi.')
     doc.add_paragraph('Transzferár esetén az adott adóév társaságiadó- és nyilvántartási szabályai, a kapcsolt ügyletek és a mentességek külön vizsgálandók. A méretkategória önmagában nem állapít meg ügyletszintű nyilvántartási kötelezettséget.')
     if metadata['approved']:

@@ -29,6 +29,20 @@ class CalculationTests(unittest.TestCase):
         self.assertTrue(result['ready'],result['blockers'])
         self.assertEqual(result['years'][-1]['rows'][1]['percent'],'30')
 
+    def test_year_confirmation_only_clears_the_selected_year_and_legacy_is_preserved(self):
+        data=extended(['b'],[]).model_dump(mode='json')
+        decision={'id':'d','first':'a','second':'b','relation':'independent','reason':'Önálló',
+                  'source':'Okirat','confirmed':True,'confirmed_years':[2025]}
+        data['decisions']=[decision]
+        result=calculate(Assessment.model_validate(data))
+        self.assertEqual([b['year'] for b in result['blockers'] if b['code']=='decision_review'],[2024])
+        decision['confirmed_years']=[2024,2025]
+        self.assertTrue(calculate(Assessment.model_validate(data))['ready'])
+        del decision['confirmed_years']
+        self.assertTrue(calculate(Assessment.model_validate(data))['ready'])
+        decision['confirmed_years']=[2023]
+        with self.assertRaises(ValueError):Assessment.model_validate(data)
+
     def test_kinship_alone_does_not_change_aggregation(self):
         data=extended(['b'],[]).model_dump(mode='json')
         data['persons']=[{'id':'p1','name':'Első személy'},{'id':'p2','name':'Második személy'}]

@@ -6,3 +6,7 @@ data/
 test-results/
 .pytest_cache/
 *.log
+
+backups/
+data-before-restore-*/
+data-restored-*/

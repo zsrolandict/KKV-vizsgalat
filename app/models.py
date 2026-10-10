@@ -162,6 +162,9 @@ class Assessment(Model):
     client: str = Field(default='', max_length=200)
     purpose: str = Field(default='KKV-minősítés', max_length=1000)
     as_of: date
+    law_date: date | None = None
+    law_source: str = Field(default='', max_length=3000)
+    law_applicability: str = Field(default='', max_length=3000)
     profile: Literal['HU', 'EU'] = 'HU'
     structure_basis: Literal['period_end', 'assessment'] = 'period_end'
     root: str

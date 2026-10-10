@@ -309,6 +309,8 @@ def _calculate(data: Assessment, scenario='base'):
                         issue('estimate',f'{year}: {companies[cid].name} évesített becslésének indoklása szükséges.',year, cid)
                     if f.start and f.end and (f.end-f.start).days<330 and not f.annualized:
                         issue('short_year',f'{year}: {companies[cid].name} rövid időszakának évesítése tisztázandó.',year, cid)
+                    if f.employment_method=='estimate' and not f.estimated:
+                        issue('employment_method',f'{year}: {companies[cid].name} létszámának éves módszertana nincs megerősítve.',year,cid)
                     if data.profile=='EU' and f.employment_method!='AWU':
                         issue('employment_method',f'{year}: EU-profilhoz {companies[cid].name} éves munkaegységben (AWU) mért létszáma szükséges.',year, cid)
                     if f.end and f.end!=closing:
