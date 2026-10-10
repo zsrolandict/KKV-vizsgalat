@@ -6,6 +6,10 @@ Magyar nyelvű, működő szakértői webalkalmazás KKV-vizsgálatokhoz: cégh�
 
 Az OPTEN PDF-ek drag-and-drop importja szerkeszthető ellenőrző nézetet nyit; ugyanabból a feltöltésből külön KKV- és Tao-tervezet készül. [Kipróbálás és a tesztverzió határai](docs/pdf-tao-tesztverzio.md), [jogi források állapota](docs/jogi-forrasok.md).
 
+## Beszélgetős segítség
+
+KKV- és Tao-ügyekben célzott hiánymagyarázat, szabad szöveges AI-kérdezés, jóváhagyható kitöltési javaslat és diktálás. [API-beállítás és működés](docs/beszelgetos-segitseg.md).
+
 ## Indítás
 
 Python 3.11+ szükséges. PDF-exporthoz a `soffice` paranccsal elérhető LibreOffice is kell. A jelenlegi felhőkörnyezetben ezek rendelkezésre állnak.

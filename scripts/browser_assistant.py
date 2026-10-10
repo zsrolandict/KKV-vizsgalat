@@ -1,0 +1,71 @@
+"""Discussion proposals are mocked; approved changes use the real case save API."""
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
+from playwright.sync_api import expect
+
+
+def validate_assistant(page,out):
+    from tests.helpers import sample
+    raw=sample().model_dump(mode='json')
+    cid=page.evaluate('async data=>(await api("/cases",{method:"POST",body:{data}})).id',raw)
+    page.goto(f'http://127.0.0.1:8011/#case/{cid}/financials')
+    # Actual financial tab key is financials.
+    page.locator('.tabs [data-action=tab][data-tab=financials]').click()
+    page.locator('[data-rate=quoted]').fill('224420-02-04')
+    expect(page.locator('[data-rate=quoted]')).to_have_attribute('aria-invalid','true')
+    page.locator('.financial-save-bar [data-action=save]').click()
+    expect(page.locator('.toast.error').last).to_contain_text('dátum')
+    page.locator('[data-rate=quoted]').fill('2025-12-31')
+    page.locator('[data-action=confirm-rate]').click()
+    expect(page.locator('#save-status')).to_contain_text('2. mentett')
+    assert page.evaluate('S.data.rates.find(r=>r.year===S.year).confirmed')
+    page.locator('.tabs [data-action=tab][data-tab=documents]').click()
+    with page.expect_download() as download:
+        page.locator('[data-action=export][data-kind=docx]').click()
+    download.value.save_as(str(out/'date-corrected.docx'))
+    page.locator('.tabs [data-action=tab][data-tab=calculation]').click()
+    expect(page.locator('.category-step.selected')).to_contain_text('Mikro')
+    expect(page.locator('.category-step')).to_have_count(4)
+    page.locator('[data-action=assistant]').click()
+    page.locator('#assistant-question').fill('Mi hiányzik még?')
+    page.locator('#assistant-message-form [type=submit]').click()
+    expect(page.locator('.assistant-message.assistant')).to_contain_text('jóváhagyás')
+    page.locator('.assistant-close').click()
+    current=page.evaluate('({data:S.data,version:S.version})')
+    proposed=current['data'];proposed['assumptions']='Megbízói nyilatkozat alapján rögzített tesztfeltételezés.'
+    response={'answer':'A nyilatkozatot feltételezésként rögzíteném.','changes':[{'field':'assumptions','before':'','after':proposed['assumptions'],'explanation':'A felhasználói válasz megőrzése.'}],'proposed_data':proposed,'base_version':current['version'],'mode':'ai'}
+    def reply(route):
+        assert route.request.post_data_json['use_ai'] is True
+        route.fulfill(json=response)
+    page.route('**/api/assistant/kkv/*',reply)
+    page.locator('[data-action=assistant]').click()
+    page.locator('.assistant-settings summary').click()
+    page.locator('#ai-settings [name=api_key]').fill('dummy-browser-key')
+    page.locator('#ai-settings [type=submit]').click()
+    expect(page.locator('#assistant-message-form [type=submit]')).to_have_text('Küldés az AI-nak')
+    page.locator('#assistant-question').fill('A nyilatkozatot rögzítsd feltételezésként.')
+    page.locator('#assistant-message-form [type=submit]').click()
+    expect(page.locator('.assistant-apply')).to_be_visible()
+    assert page.evaluate('S.data.assumptions')==''
+    page.locator('.assistant-apply').click()
+    expect(page.locator('.assistant-proposal')).to_have_count(0)
+    assert page.evaluate('S.data.assumptions')==proposed['assumptions']
+    page.locator('.assistant-close').click()
+    page.reload()
+    page.locator('[data-action=assistant]').wait_for()
+    assert page.evaluate('S.data.assumptions')==proposed['assumptions']
+    page.unroute('**/api/assistant/kkv/*')
+    page.evaluate('async()=>await api("/assistant/settings",{method:"POST",body:{clear:true}})')
+    page.goto('http://127.0.0.1:8011/tao')
+    page.locator('[data-action=demo]').click()
+    page.locator('[data-action=assistant]').click()
+    page.locator('#assistant-question').fill('Miért nem eldönthető a kapcsolat?')
+    page.locator('#assistant-message-form [type=submit]').click()
+    expect(page.locator('.assistant-message.assistant')).to_contain_text('Hiányzik')
+    page.set_viewport_size({'width':390,'height':900})
+    assert page.locator('#case-assistant').evaluate('(e)=>e.scrollWidth<=e.clientWidth')
+    page.screenshot(path=str(out/'assistant-mobile.png'))
+    page.locator('.assistant-close').click()
+    page.set_viewport_size({'width':1440,'height':1050})
+    page.goto('http://127.0.0.1:8011/')

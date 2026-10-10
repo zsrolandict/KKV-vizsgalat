@@ -55,9 +55,19 @@ async def security(request, call_next):
     return response
 
 
+def validation_field(location):
+    parts=list(location)
+    if 'rates' in parts:
+        i=parts.index('rates')
+        label={'quoted':'MNB jegyzés napja','date':'Árfolyam érvényességi napja','value':'HUF/EUR árfolyam','source':'Árfolyam forrása'}.get(parts[-1])
+        if label and len(parts)>i+1 and isinstance(parts[i+1],int):
+            return f'{label} ({parts[i+1]+1}. árfolyamsor)'
+    return '.'.join(map(str,location))
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_error(request, exc):
-    return JSONResponse({'detail':'Ellenőrizze a megadott adatokat.','errors':[{'field':'.'.join(map(str,e['loc'])),'message':e['msg']} for e in exc.errors()]},status_code=422)
+    return JSONResponse({'detail':'Ellenőrizze a megadott adatokat.','errors':[{'field':validation_field(e['loc']),'message':('A dátum év-hó-nap formátumú legyen, négyjegyű évvel (például 2024-12-31).' if e['type'].startswith('date') else e['msg'])} for e in exc.errors()]},status_code=422)
 
 
 def password_hash(password):
@@ -491,6 +501,8 @@ from .tao_api import build_router as tao_router
 app.include_router(tao_router(user, staff, reviewer))
 from .pdf_api import build_router as pdf_router
 app.include_router(pdf_router(staff))
+from .assistant_api import build_router as assistant_router
+app.include_router(assistant_router(staff, admin))
 app.mount('/static',StaticFiles(directory=STATIC),name='static')
 
 

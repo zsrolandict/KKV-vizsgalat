@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import urlopen
 from docx import Document
 from playwright.sync_api import sync_playwright, expect
+from browser_assistant import validate_assistant
 from browser_guided import validate_guided_workflow, validate_year_confirmation
 from browser_tao import validate_tao_workflow, validate_tao_demo_decisions
 
@@ -50,6 +51,7 @@ def main():
                 page.locator('#auth-form [type=submit]').click()
                 page.get_by_role('heading',name='Ügyeid, egy helyen.').wait_for()
                 try:
+                    validate_assistant(page,OUT)
                     validate_guided_workflow(page,OUT)
                     validate_year_confirmation(page)
                     validate_tao_workflow(page,OUT)
@@ -113,13 +115,13 @@ def main():
                     page.locator('[data-rate=quoted]').fill(f'{year}-12-31')
                     page.locator('[data-rate=source]').fill('MNB – tesztforrás')
                     page.locator('[data-rate=confirmed]').check()
-                page.locator('[data-action=save]').click()
-                expect(page.locator('[data-action=save]')).to_be_disabled(); expect(page.locator('#recalculation-notice')).to_be_empty(); assert page.locator('.tabs .tab-badge').count()==0
+                page.locator('.case-heading [data-action=save]').click()
+                expect(page.locator('.case-heading [data-action=save]')).to_be_disabled(); expect(page.locator('#recalculation-notice')).to_be_empty(); assert page.locator('.tabs .tab-badge').count()==0
                 page.locator('.case-heading [data-action=case-settings]').click()
                 page.locator('#modal-form [name=law_date]').fill('2024-01-01')
                 page.locator('#modal-form [name=law_source]').fill('Böngészőteszt – fiktív ellenőrzött KKV jogi forrás 2024/2025')
                 page.locator('#modal-form [type=submit]').click()
-                expect(page.locator('[data-action=save]')).to_be_disabled()
+                expect(page.locator('.case-heading [data-action=save]')).to_be_disabled()
                 page.locator('.tabs [data-action=tab][data-tab=review]').click()
                 page.locator('#approval-form').wait_for()
                 for name in ['financials','relationships','rules']:page.locator(f'#approval-form [name={name}]').check()
@@ -155,7 +157,7 @@ def main():
                 uid=page.locator('[name=client_user_id] option').filter(has_text='Teszt Ügyfél').get_attribute('value')
                 page.locator('[name=client_user_id]').select_option(uid)
                 page.locator('#modal-form [type=submit]').click()
-                expect(page.locator('[data-action=save]')).to_be_disabled()
+                expect(page.locator('.case-heading [data-action=save]')).to_be_disabled()
                 customer_context=browser.new_context(viewport={'width':1440,'height':1000},accept_downloads=True,locale='hu-HU')
                 customer=customer_context.new_page();customer.on('pageerror',lambda e:errors.append(str(e)))
                 customer.goto(URL);customer.locator('[name=username]').fill('customer');customer.locator('[name=password]').fill(password)
