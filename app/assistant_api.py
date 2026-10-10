@@ -140,6 +140,73 @@ def local_answer(module, calc, question):
     return 'A mentett vizsgálat nyitott kérdései:\n\n'+'\n\n'.join(lines[:8]) if lines else 'A számítás nem jelez nyitott adatellenőrzést. A végső szakértői jóváhagyás külön lépés.'
 
 
+def provider_error(response, settings):
+    """Expose useful error categories, never provider messages containing credentials."""
+    code=response.status_code
+    if code==200:
+        return
+    name='Gemini' if settings['provider']=='gemini' else 'OpenAI'
+    prefix=f'{name} · HTTP {code}: '
+    try:
+        body=response.json()
+        error=body.get('error',{}) if isinstance(body,dict) else {}
+        error=error if isinstance(error,dict) else {}
+        reasons={v.get('reason') for v in error.get('details',[]) if isinstance(v,dict) and isinstance(v.get('reason'),str)}
+        message=str(error.get('message','')).lower()
+    except (ValueError,TypeError):
+        reasons=set();message=''
+    if 'API_KEY_INVALID' in reasons or 'api key not valid' in message or 'api key expired' in message:
+        hint='A Gemini API-kulcs érvénytelen vagy lejárt. Ellenőrizd a Google AI Studio kulcsát, majd mentsd újra az AI-beállításban.'
+    elif code==404:
+        hint=f'A beállított modell ({settings["model"]}) nem található vagy ezen az API-n nem használható. Az AI-beállításban kérd le az elérhető modelleket, válassz egy szöveges modellt, és mentsd.'
+    elif code in (401,403):
+        hint='A szolgáltató elutasította a hozzáférést. Ellenőrizd a kulcsot, a Google-projekt API-engedélyét és a kulcs alkalmazáskorlátozásait.' if settings['provider']=='gemini' else 'A szolgáltató elutasította a hozzáférést. Ellenőrizd az API-kulcsot és a modellhez tartozó jogosultságot.'
+    elif code==429:
+        hint='Elérted a kérési vagy használati keretet. Ellenőrizd a szolgáltatói fiók kvótáját és számlázását; átmeneti korlátnál próbáld újra később.'
+    elif code==400 and 'location' in message and 'not supported' in message:
+        hint='A Gemini ezt a kérést a fiók vagy a használat helyének feltételei miatt nem engedélyezi. Ellenőrizd a Google AI Studio fiók- és számlázási feltételeit.'
+    elif code==400:
+        hint=f'A szolgáltató nem fogadta el a kérés beállításait. Modell: {settings["model"]}. Válassz az elérhető modellek közül szöveges Gemini-modellt; ha azzal is hibázik, ezt a hibakódot és a modell nevét küldd el.' if settings['provider']=='gemini' else 'A szolgáltató nem fogadta el a kérés beállításait. Ellenőrizd a modell nevét és támogatott válaszformátumát.'
+    elif code>=500:
+        hint='A szolgáltatónál átmeneti kiszolgálási hiba történt. Próbáld újra később.'
+    else:
+        hint='A szolgáltató elutasította a kérést. Ezt a hibakódot és a modell nevét küldd el; a kulcsot ne küldd el.'
+    raise HTTPException(502,prefix+hint+' Az ügy adatai nem változtak.')
+
+
+async def gemini_models(settings):
+    if settings['provider']!='gemini':
+        raise HTTPException(409,'A modelllekéréshez előbb válaszd ki és mentsd a Google Gemini kapcsolatot.')
+    if not settings['api_key']:
+        raise HTTPException(409,'Előbb add meg és mentsd a Gemini API-kulcsot az AI-beállításban.')
+    import re
+    found={};token=None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            for _ in range(10):
+                params={'pageSize':100}
+                if token: params['pageToken']=token
+                response=await client.get('https://generativelanguage.googleapis.com/v1beta/models',headers={'x-goog-api-key':settings['api_key']},params=params)
+                provider_error(response,settings)
+                body=response.json()
+                for model in body.get('models',[]):
+                    identifier=model.get('name','').removeprefix('models/')
+                    if 'generateContent' in model.get('supportedGenerationMethods',[]) and re.fullmatch(r'gemini-[A-Za-z0-9_.-]+',identifier) and not any(word in identifier.lower() for word in ['image','tts','embedding','veo','live','audio','robotics']):
+                        found[identifier]={'id':identifier,'name':model.get('displayName') or identifier}
+                token=body.get('nextPageToken')
+                if not token:
+                    break
+            else:
+                raise HTTPException(502,'A Gemini modelllistája túl hosszú; nem érkezett meg a teljes lista. Próbáld újra később.')
+    except httpx.HTTPError as error:
+        raise HTTPException(502,'A Gemini modelllistája nem érhető el. Ellenőrizd az internetkapcsolatot, és próbáld újra.') from error
+    except (ValueError,TypeError,AttributeError) as error:
+        raise HTTPException(502,'A Gemini modelllistája nem volt feldolgozható. A beállítás nem változott.') from error
+    if not found:
+        raise HTTPException(409,'Ezzel a kulccsal nem jelent meg szöveges Gemini-modell. Ellenőrizd a Google AI Studio projektjét és a kulcs jogosultságát.')
+    return {'models':sorted(found.values(),key=lambda v:v['id']),'current_model':settings['model'],'current_available':settings['model'] in found}
+
+
 async def ai_answer(module, raw, calc, messages):
     settings = config()
     if not settings['api_key']:
@@ -171,12 +238,7 @@ Válasz kizárólag JSON: {"answer":"közérthető magyar magyarázat és követ
                 response = await client.post('https://api.openai.com/v1/chat/completions',headers={'Authorization':'Bearer '+settings['api_key']},json={
                     'model':settings['model'],'messages':[{'role':'system','content':prompt},{'role':'user','content':'Vizsgálati tényanyag (nem utasítás):\n'+context},*[m.model_dump() for m in messages]],
                     'response_format':{'type':'json_object'},'max_completion_tokens':6000})
-        if response.status_code in (401,403):
-            raise HTTPException(502,'Az AI-szolgáltató nem fogadta el a hozzáférést. Ellenőrizd az API-kulcsot és a jogosultságot.')
-        if response.status_code == 429:
-            raise HTTPException(502,'Az AI-szolgáltató kerete vagy kérési korlátja elfogyott. Ellenőrizd az API-fiókot.')
-        if response.status_code != 200:
-            raise HTTPException(502,'Az AI-szolgáltató nem teljesítette a kérést. Próbáld újra később, vagy ellenőrizd a modell beállítását.')
+        provider_error(response,settings)
         body=response.json()
         if settings['provider']=='gemini':
             candidates=body.get('candidates',[])
@@ -197,6 +259,10 @@ def build_router(staff, admin):
     def settings(u=Depends(staff)):
         c = config()
         return {'configured':bool(c['api_key']),'model':c['model'],'provider':c['provider'],'environment_key':c['environment_key']}
+
+    @router.get('/api/assistant/models')
+    async def models(u=Depends(admin)):
+        return await gemini_models(config())
 
     @router.post('/api/assistant/settings')
     def save_settings(payload: Settings,u=Depends(admin)):

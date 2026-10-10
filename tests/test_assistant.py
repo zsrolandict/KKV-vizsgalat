@@ -167,6 +167,59 @@ class AssistantTests(unittest.TestCase):
             self.client.post('/api/assistant/settings',json={'provider':'gemini'},headers=self.headers)
             self.assertNotIn('injected-gemini-secret',(db.data_dir()/'ai-settings.json').read_text())
 
+    def test_gemini_errors_identify_cause_without_returning_provider_text(self):
+        self.client.post('/api/assistant/settings',json={'provider':'gemini','api_key':'gemini-test-secret'},headers=self.headers)
+        cases=[(404,{'error':{'message':'model unavailable gemini-test-secret'}},'nem található'),
+               (400,{'error':{'message':'secret gemini-test-secret','details':[{'reason':'API_KEY_INVALID'}]}},'érvénytelen'),
+               (403,{'error':{'message':'secret gemini-test-secret'}},'hozzáférést'),
+               (429,{'error':{'message':'secret gemini-test-secret'}},'keretet'),
+               (400,{'error':{'message':'User location is not supported for API use'}},'használat helyének'),
+               (400,{'error':{'message':'secret gemini-test-secret'}},'beállításait'),
+               (503,{'error':{'message':'secret gemini-test-secret'}},'átmeneti')]
+        for status,body,hint in cases:
+            with self.subTest(status=status,hint=hint):
+                transport=AsyncMock();response=unittest.mock.Mock(status_code=status);response.json.return_value=body;transport.post.return_value=response
+                with patch('app.assistant_api.httpx.AsyncClient') as factory:
+                    factory.return_value.__aenter__.return_value=transport
+                    result=self.discuss(use_ai=True)
+                self.assertEqual(result.status_code,502)
+                self.assertIn(f'HTTP {status}',result.json()['detail']);self.assertIn(hint,result.json()['detail'])
+                self.assertNotIn('gemini-test-secret',result.text)
+        self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['version'],1)
+
+    def test_gemini_model_discovery_filters_and_paginates_without_sending_case(self):
+        self.client.post('/api/assistant/settings',json={'provider':'gemini','api_key':'gemini-test-secret','model':'gemini-unavailable'},headers=self.headers)
+        first=unittest.mock.Mock(status_code=200);first.json.return_value={'models':[
+            {'name':'models/gemini-available','displayName':'Gemini available','supportedGenerationMethods':['generateContent']},
+            {'name':'models/gemini-image-preview','supportedGenerationMethods':['generateContent']},
+            {'name':'models/gemini-embedding','supportedGenerationMethods':['embedContent']}], 'nextPageToken':'page-two'}
+        second=unittest.mock.Mock(status_code=200);second.json.return_value={'models':[{'name':'models/gemini-another','supportedGenerationMethods':['generateContent']}]}
+        transport=AsyncMock();transport.get.side_effect=[first,second]
+        with patch('app.assistant_api.httpx.AsyncClient') as factory:
+            factory.return_value.__aenter__.return_value=transport
+            result=self.client.get('/api/assistant/models')
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual([v['id'] for v in result.json()['models']],['gemini-another','gemini-available'])
+        self.assertFalse(result.json()['current_available'])
+        self.assertNotIn('gemini-test-secret',result.text)
+        call=transport.get.call_args
+        self.assertEqual(call.kwargs['params']['pageToken'],'page-two')
+        self.assertNotIn('json',call.kwargs);self.assertNotIn('gemini-test-secret',call.args[0])
+        self.assertEqual(self.client.get('/api/assistant/settings').json()['model'],'gemini-unavailable')
+        self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['version'],1)
+
+    def test_model_discovery_requires_key_and_handles_provider_rejection(self):
+        self.client.post('/api/assistant/settings',json={'provider':'gemini'},headers=self.headers)
+        self.assertEqual(self.client.get('/api/assistant/models').status_code,409)
+        self.client.post('/api/assistant/settings',json={'provider':'gemini','api_key':'gemini-test-secret'},headers=self.headers)
+        transport=AsyncMock();response=unittest.mock.Mock(status_code=403);response.json.return_value={'error':{'message':'gemini-test-secret'}};transport.get.return_value=response
+        with patch('app.assistant_api.httpx.AsyncClient') as factory:
+            factory.return_value.__aenter__.return_value=transport
+            failure=self.client.get('/api/assistant/models')
+        self.assertEqual(failure.status_code,502);self.assertIn('HTTP 403',failure.text);self.assertNotIn('gemini-test-secret',failure.text)
+        with db.connection() as con:con.execute('UPDATE users SET role=? WHERE username=?',('analyst','expert'))
+        self.assertEqual(self.client.get('/api/assistant/models').status_code,403)
+
     def test_invalid_date_error_is_readable(self):
         raw=sample().model_dump(mode='json');raw['rates'][0]['quoted']='224420-02-04'
         result=self.client.put('/api/cases/'+self.cid,json={'data':raw,'version':1},headers=self.headers)
