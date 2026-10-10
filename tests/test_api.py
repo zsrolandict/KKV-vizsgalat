@@ -14,6 +14,42 @@ from .helpers import sample
 
 
 class APITests(unittest.TestCase):
+    def test_existing_draft_receives_guidance_without_changing_saved_snapshot(self):
+        data=sample().model_dump(mode='json');data['rates'][0]['confirmed']=False
+        self.client.put('/api/cases/'+self.cid,json={'data':data,'version':1},headers=self.headers)
+        with db.connection() as con:
+            snap=con.execute('SELECT calculation FROM versions WHERE case_id=? AND version=2',(self.cid,)).fetchone()
+            old=json.loads(snap['calculation'])
+            for b in old['blockers']:
+                for key in ['title','why','action','destination','target']:b.pop(key,None)
+            con.execute('UPDATE versions SET calculation=? WHERE case_id=? AND version=2',(json.dumps(old),self.cid))
+        current=self.client.get('/api/cases/'+self.cid).json()
+        self.assertEqual(current['version'],2)
+        check=next(b for b in current['calculation']['blockers'] if b['code']=='rate_unconfirmed')
+        self.assertEqual(check['destination'],'rate')
+        self.assertIn('pipáld',check['action'])
+        historical=self.client.get(f'/api/cases/{self.cid}/versions/2').json()
+        self.assertNotIn('action',historical['calculation']['blockers'][0])
+
+    def test_network_layout_is_versioned_and_does_not_change_calculation(self):
+        original=self.client.get('/api/cases/'+self.cid).json()
+        data=original['data'];data['graph_positions']={'a':{'x':320,'y':220}}
+        saved=self.client.put('/api/cases/'+self.cid,json={'data':data,'version':1},headers=self.headers)
+        self.assertEqual(saved.status_code,200,saved.text)
+        current=self.client.get('/api/cases/'+self.cid).json()
+        self.assertEqual(current['data']['graph_positions']['a'],{'x':320,'y':220})
+        self.assertEqual(current['calculation']['years'],original['calculation']['years'])
+        previous=self.client.get(f'/api/cases/{self.cid}/versions/1').json()
+        self.assertFalse(previous['data'].get('graph_positions'))
+
+    def test_network_layout_rejects_unknown_nodes_and_invalid_coordinates(self):
+        for positions in [{'unknown':{'x':200,'y':200}},{'a':{'x':-1,'y':200}},{'a':{'x':200,'y':6000}}]:
+            with self.subTest(positions=positions):
+                data=sample().model_dump(mode='json');data['graph_positions']=positions
+                result=self.client.put('/api/cases/'+self.cid,json={'data':data,'version':1},headers=self.headers)
+                self.assertEqual(result.status_code,422)
+        self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['version'],1)
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'KKV_DATA_DIR':self.tmp.name});self.env.start();db.initialize()
         self.client=TestClient(app);self.password=secrets.token_urlsafe(24)
@@ -51,6 +87,15 @@ class APITests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['status'],'draft')
         old=self.client.get(f'/api/cases/{self.cid}/versions/1').json();self.assertIsNotNone(old['approved_at'])
 
+    def test_report_preview_uses_current_saved_version(self):
+        preview=self.client.get(f'/api/cases/{self.cid}/report-summary').json()
+        self.assertFalse(preview['approved']);self.assertEqual(preview['version'],1)
+        self.assertIn('jóváhagyásra váró',preview['conclusion'])
+        data=sample().model_dump(mode='json');data['companies'][0]['name']='Új név Kft.'
+        self.client.put(f'/api/cases/{self.cid}',json={'data':data,'version':1},headers=self.headers)
+        preview=self.client.get(f'/api/cases/{self.cid}/report-summary').json()
+        self.assertEqual(preview['company'],'Új név Kft.');self.assertEqual(preview['version'],2)
+
     def test_unresolved_case_cannot_be_approved(self):
         r=self.client.post('/api/cases/demo',headers=self.headers);cid=r.json()['id']
         r=self.client.post(f'/api/cases/{cid}/approve',json={'version':1,'financials':True,'relationships':True,'rules':True},headers=self.headers)
@@ -64,6 +109,7 @@ class APITests(unittest.TestCase):
         self.assertEqual(customer.get('/api/cases/'+other).status_code,404)
         result=customer.get('/api/cases/'+self.cid).json();self.assertNotIn('data',result);self.assertNotIn('calculation',result)
         self.assertEqual(customer.get(f'/api/cases/{self.cid}/calculate').status_code,403)
+        self.assertEqual(customer.get(f'/api/cases/{self.cid}/report-summary').status_code,403)
         self.assertEqual(customer.get(f'/api/cases/{self.cid}/report/docx').status_code,404)
         self.assertEqual(customer.post('/api/cases/demo',headers=ch).status_code,403)
         self.assertEqual(len(customer.get('/api/cases').json()),1)

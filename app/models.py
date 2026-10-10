@@ -150,6 +150,11 @@ class PublicReview(Model):
     confirmed: bool = False
 
 
+class GraphPosition(Model):
+    x: float = Field(ge=110, le=5000, allow_inf_nan=False)
+    y: float = Field(ge=100, le=5000, allow_inf_nan=False)
+
+
 class Assessment(Model):
     schema_version: int = 1
     title: str = Field(min_length=1, max_length=200)
@@ -174,12 +179,15 @@ class Assessment(Model):
     public_review: PublicReview = Field(default_factory=PublicReview)
     assumptions: str = Field(default='', max_length=10000)
     conclusion_notes: str = Field(default='', max_length=10000)
+    graph_positions: dict[str, GraphPosition] = Field(default_factory=dict, max_length=750)
 
     @model_validator(mode='after')
     def references(self):
         ids = [c.id for c in self.companies] + [p.id for p in self.persons]
         if len(ids) != len(set(ids)):
             raise ValueError('A szereplők azonosítói nem lehetnek ismétlődők.')
+        if not set(self.graph_positions) <= set(ids):
+            raise ValueError('A cégháló elrendezése ismeretlen szereplőre mutat.')
         cids = {c.id for c in self.companies}
         pids = {p.id for p in self.persons}
         if self.root not in cids:

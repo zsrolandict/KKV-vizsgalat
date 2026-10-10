@@ -3,6 +3,7 @@ from collections import defaultdict, deque
 from datetime import date
 from decimal import Decimal as D, localcontext
 from .models import Assessment
+from .guidance import explanation
 
 RULE_VERSION = 'KKV-2026.1-szakertoi'
 CATEGORIES = ['micro', 'small', 'medium', 'large']
@@ -84,13 +85,15 @@ def calculate(data: Assessment, scenario='base'):
 def _calculate(data: Assessment, scenario='base'):
     blockers, warnings = [], []
     companies = {c.id: c for c in data.companies}
+    actor_names = {actor.id: actor.name for actor in [*data.companies, *data.persons]}
     financials = {(f.company, f.year): f for f in data.financials}
     rates = {r.year: r for r in data.rates}
     years = sorted(data.years)
     results = []
 
-    def issue(code, message, year=None):
-        item = {'code': code, 'message': message, 'year': year}
+    def issue(code, message, year=None, target=None):
+        item = {'code': code, 'message': message, 'year': year,
+                **explanation(code), 'target': target}
         if item not in blockers:
             blockers.append(item)
 
@@ -102,7 +105,7 @@ def _calculate(data: Assessment, scenario='base'):
         if event.date > data.as_of:
             continue
         if not event.confirmed or not event.resolution:
-            issue('event', f'Strukturális esemény szakértői rendezése szükséges: {event.description}')
+            issue('event', f'Strukturális esemény szakértői rendezése szükséges: {event.description}', target=event.id)
     if scenario == 'all':
         warnings.append('Érzékenységvizsgálat: minden ismert üzleti vállalkozás 100%-os beszámítása. Nem önálló jogi minősítés.')
 
@@ -133,7 +136,7 @@ def _calculate(data: Assessment, scenario='base'):
                     and (not c.founded or c.founded <= structure_day)
                     and (not c.ceased or c.ceased >= structure_day)}
         if data.root not in business:
-            issue('root_inactive', 'A vizsgált vállalkozás a kiválasztott hálóidőpontban még nem létezik vagy megszűnt.', year)
+            issue('root_inactive', 'A vizsgált vállalkozás a kiválasztott hálóidőpontban még nem létezik vagy megszűnt.', year, data.root)
         linked = defaultdict(set)
         link_proofs = defaultdict(list)
         partners = []
@@ -145,9 +148,9 @@ def _calculate(data: Assessment, scenario='base'):
             totals[0] += o.capital; totals[1] += o.votes
             owner = companies.get(o.owner)
             if not o.source:
-                issue('ownership_source', f'{companies[o.company].name}: tulajdoni kapcsolat forrása hiányzik.', year)
+                issue('ownership_source', f'{actor_names[o.owner]} → {companies[o.company].name}: a tulajdoni kapcsolat igazoló forrása hiányzik.', year, o.id)
             if o.control and not o.reason:
-                issue('control_reason', f'{companies[o.company].name}: az irányítási jog indoklása hiányzik.', year)
+                issue('control_reason', f'{companies[o.company].name}: az irányítási jog indoklása hiányzik.', year, o.id)
             if owner and owner.kind != 'public' and o.owner in business and o.company in business:
                 known.update([o.owner, o.company])
                 if o.votes > 50 or o.control:
@@ -158,23 +161,24 @@ def _calculate(data: Assessment, scenario='base'):
                 elif max(o.capital,o.votes) >= 25:
                     if owner.investor_exception:
                         if not owner.exception_reason:
-                            issue('investor_reason', f'{owner.name}: befektetői kivétel indoklása hiányzik.', year)
+                            issue('investor_reason', f'{owner.name}: befektetői kivétel indoklása hiányzik.', year, owner.id)
                     else:
                         partners.append((o.owner,o.company,max(o.capital,o.votes),f'Tulajdon/szavazat: {o.source or "forrás nincs"}'))
                     known.update([o.owner, o.company])
         for cid, sums in ownership_sums.items():
             if any(s > 100 for s in sums):
-                issue('ownership_sum', f'{companies[cid].name}: a tulajdoni vagy szavazati arányok összege meghaladja a 100%-ot.', year)
+                issue('ownership_sum', f'{companies[cid].name}: a tulajdoni vagy szavazati arányok összege meghaladja a 100%-ot.', year, cid)
 
         for d in data.decisions:
             if not active(d, structure_day):
                 continue
             if not d.confirmed or not d.reason or not d.source:
-                issue('decision_review', f'Kapcsolati döntés ellenőrzése szükséges: {companies[d.first].name} – {companies[d.second].name}.', year)
+                missing = [label for absent, label in [(not d.reason, 'indoklás'), (not d.source, 'igazoló forrás'), (not d.confirmed, 'ellenőrzés megerősítése')] if absent]
+                issue('decision_review', f'{companies[d.first].name} – {companies[d.second].name}: hiányzik: {", ".join(missing)}.', year, d.id)
             if d.basis == 'persons' and (not d.market or not d.acting_together):
-                issue('persons_market', f'{companies[d.second].name}: a közös fellépés és a piaci kapcsolat indoklása szükséges.', year)
+                issue('persons_market', f'{companies[d.second].name}: a közös fellépés és a piaci kapcsolat indoklása szükséges.', year, d.id)
             if d.relation == 'unresolved':
-                issue('relation_unresolved', f'Tisztázatlan kapcsolat: {companies[d.first].name} – {companies[d.second].name}.', year)
+                issue('relation_unresolved', f'Tisztázatlan kapcsolat: {companies[d.first].name} – {companies[d.second].name}.', year, d.id)
             elif d.relation == 'linked':
                 linked[d.first].add(d.second); linked[d.second].add(d.first)
                 link_proofs[tuple(sorted([d.first,d.second]))].append(f'{companies[d.first].name} ↔ {companies[d.second].name}: {d.reason or "indoklás hiányzik"}; forrás: {d.source or "hiányzik"}.')
@@ -183,7 +187,7 @@ def _calculate(data: Assessment, scenario='base'):
             known.update([d.first,d.second])
 
         components, visited = [], set()
-        for cid in business:
+        for cid in sorted(business):
             if cid in visited:
                 continue
             group = set(); todo = [cid]
@@ -223,7 +227,7 @@ def _calculate(data: Assessment, scenario='base'):
                 key = tuple(sorted([a,b]))
                 if key in seen_pairs:
                     if seen_pairs[key] != w:
-                        issue('partner_conflict', 'Ugyanahhoz a cégpárhoz eltérő partnerarány tartozik.', year)
+                        issue('partner_conflict', 'Ugyanahhoz a cégpárhoz eltérő partnerarány tartozik.', year, a)
                     continue
                 seen_pairs[key] = w
                 candidate_groups[other].append((w,why))
@@ -231,13 +235,13 @@ def _calculate(data: Assessment, scenario='base'):
             group = components[gi]
             overrides = [o for o in data.overrides if o.year==year and o.company in group]
             if len(overrides)>1:
-                issue('override_conflict','Egy kapcsolódó cégblokkhoz csak egy összeszámítási felülbírálat adható.',year)
+                issue('override_conflict','Egy kapcsolódó cégblokkhoz csak egy összeszámítási felülbírálat adható.',year, sorted(group)[0])
             if overrides:
                 o=overrides[0]; w=o.percent; why=o.reason
                 if not o.confirmed:
-                    issue('override_review','Összeszámítási felülbírálat jóváhagyása szükséges.',year)
+                    issue('override_review','Összeszámítási felülbírálat jóváhagyása szükséges.',year, o.company)
             elif len(candidates)>1:
-                issue('multiple_paths', f'Több partnerútvonal: {", ".join(companies[c].name for c in sorted(group))}. A blokk arányát szakértői összeszámítási döntéssel kell rögzíteni.',year)
+                issue('multiple_paths', f'Több partnerútvonal: {", ".join(companies[c].name for c in sorted(group))}. A blokk arányát szakértői összeszámítási döntéssel kell rögzíteni.',year, sorted(group)[0])
                 w=D(0);why='Több partnerútvonal – az arány még nincs megállapítva.'
             else:
                 w,why=candidates[0]
@@ -250,12 +254,13 @@ def _calculate(data: Assessment, scenario='base'):
                 if excluded_id in reasons and weights.get(excluded_id,0)==0:
                     reasons[excluded_id] = f'{d.reason}; forrás: {d.source or "hiányzik"}.'
                 if d.first in group_by_id and d.second in group_by_id and group_by_id[d.first]==group_by_id[d.second]:
-                    issue('independent_conflict','Az önálló minősítés ellentmond a kapcsolódási láncnak.',year)
+                    issue('independent_conflict','Az önálló minősítés ellentmond a kapcsolódási láncnak.',year, d.id)
                 elif (d.first == data.root and weights.get(d.second,0)>0) or (d.second == data.root and weights.get(d.first,0)>0):
-                    issue('independent_conflict','Az önálló minősítés ellentmond a releváns partnerbeszámításnak.',year)
-        for cid in business:
+                    issue('independent_conflict','Az önálló minősítés ellentmond a releváns partnerbeszámításnak.',year, d.id)
+        for cid in sorted(business, key=lambda cid: (companies[cid].name, cid)):
             if cid not in known and scenario=='base':
-                issue('relationship_missing',f'{companies[cid].name}: a kapcsolat vagy a kizárás indokát rögzíteni kell.',year)
+                reasons[cid]='A rögzített adatokból a kapcsolat még nem állapítható meg. Tulajdoni kapcsolat vagy indokolt szakértői minősítés szükséges; a személyi tulajdon és rokonság önmagában nem dönt a beszámításról.'
+                issue('relationship_missing',f'{companies[cid].name}: a kapcsolat vagy a kizárás indokát rögzíteni kell.',year, cid)
         if scenario=='all':
             weights={cid:D(100) for cid in business}
             reasons={cid:'100%-os érzékenységvizsgálat.' for cid in business}
@@ -269,9 +274,9 @@ def _calculate(data: Assessment, scenario='base'):
                 if included == cid:
                     continue
                 if included not in weights or weights[included]!=weights[cid]:
-                    issue('consolidation_weight',f'{companies[cid].name}: eltérő súlyú konszolidáció szakértői rendezést igényel.',year)
+                    issue('consolidation_weight',f'{companies[cid].name}: eltérő súlyú konszolidáció szakértői rendezést igényel.',year, cid)
                 elif included in covered or cid in covered:
-                    issue('consolidation_overlap','Átfedő konszolidált beszámolók: a források körét rendezni kell.',year)
+                    issue('consolidation_overlap','Átfedő konszolidált beszámolók: a források körét rendezni kell.',year, cid)
                 else:
                     covered[included]=cid
 
@@ -279,7 +284,7 @@ def _calculate(data: Assessment, scenario='base'):
         for cid in sorted(business,key=lambda i:(i!=data.root,companies[i].name)):
             f=financials.get((cid,year));w=weights[cid]
             row={'company':cid,'name':companies[cid].name,'percent':text_decimal(w),
-                 'relation':'own' if cid==data.root else 'scenario' if scenario=='all' else 'linked' if cid in root_set else 'partner' if w>0 else 'independent',
+                 'relation':'own' if cid==data.root else 'scenario' if scenario=='all' else 'linked' if cid in root_set else 'partner' if w>0 else 'unresolved' if cid not in known else 'independent',
                  'reason':reasons[cid], 'included':False,'employees':None,'turnover':None,'balance':None,
                  'raw_employees':text_decimal(f.employees) if f and f.employees is not None else None,
                  'raw_turnover':text_decimal(f.turnover) if f and f.turnover is not None else None,
@@ -289,24 +294,24 @@ def _calculate(data: Assessment, scenario='base'):
                 row['relation']='consolidated'
             elif w>0:
                 if not f or any(v is None for v in (f.employees,f.turnover,f.balance)):
-                    issue('financial_missing',f'{year}: {companies[cid].name} beszámolóadata hiányos.',year);numeric_complete=False
+                    issue('financial_missing',f'{year}: {companies[cid].name} beszámolóadata hiányos.',year, cid);numeric_complete=False
                 elif f.currency=='EUR' and fx is None:
                     numeric_complete=False
                 else:
                     if not f.source:
-                        issue('financial_source',f'{year}: {companies[cid].name} adatforrása hiányzik.',year)
+                        issue('financial_source',f'{year}: {companies[cid].name} adatforrása hiányzik.',year, cid)
                     if not f.start or not f.end:
-                        issue('financial_period',f'{year}: {companies[cid].name} beszámolási időszakát rögzíteni kell.',year)
+                        issue('financial_period',f'{year}: {companies[cid].name} beszámolási időszakát rögzíteni kell.',year, cid)
                     if not f.estimated and (not f.accepted or f.accepted>data.as_of):
-                        issue('financial_acceptance',f'{year}: {companies[cid].name} elfogadott beszámolója szükséges.',year)
+                        issue('financial_acceptance',f'{year}: {companies[cid].name} elfogadott beszámolója szükséges.',year, cid)
                     if f.estimated and (not f.annualized or not f.source):
-                        issue('estimate',f'{year}: {companies[cid].name} évesített becslésének indoklása szükséges.',year)
+                        issue('estimate',f'{year}: {companies[cid].name} évesített becslésének indoklása szükséges.',year, cid)
                     if f.start and f.end and (f.end-f.start).days<330 and not f.annualized:
-                        issue('short_year',f'{year}: {companies[cid].name} rövid időszakának évesítése tisztázandó.',year)
+                        issue('short_year',f'{year}: {companies[cid].name} rövid időszakának évesítése tisztázandó.',year, cid)
                     if data.profile=='EU' and f.employment_method!='AWU':
-                        issue('employment_method',f'{year}: EU-profilhoz {companies[cid].name} éves munkaegységben (AWU) mért létszáma szükséges.',year)
+                        issue('employment_method',f'{year}: EU-profilhoz {companies[cid].name} éves munkaegységben (AWU) mért létszáma szükséges.',year, cid)
                     if f.end and f.end!=closing:
-                        issue('period_alignment',f'{year}: eltérő üzletiév-zárás; {companies[cid].name} időszakát egyeztetni kell.',year)
+                        issue('period_alignment',f'{year}: eltérő üzletiév-zárás; {companies[cid].name} időszakát egyeztetni kell.',year, cid)
                     money_fx=fx if f.currency=='EUR' else D(1)
                     values=[f.employees*w/100,f.turnover*money_fx*w/100,f.balance*money_fx*w/100]
                     totals=[t+v for t,v in zip(totals,values)]

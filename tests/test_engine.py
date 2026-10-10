@@ -7,6 +7,48 @@ from .helpers import sample,extended
 
 
 class CalculationTests(unittest.TestCase):
+    def test_missing_relation_explains_action_and_does_not_claim_independence(self):
+        result=calculate(extended(['b'],[]))
+        checks=[b for b in result['blockers'] if b['code']=='relationship_missing']
+        self.assertEqual({b['year'] for b in checks},{2024,2025})
+        self.assertTrue(all(b['target']=='b' and b['destination']=='new_decision' for b in checks))
+        self.assertIn('partner',checks[0]['action'])
+        self.assertIn('rokonság',checks[0]['why'])
+        self.assertEqual(result['years'][0]['rows'][1]['relation'],'unresolved')
+
+    def test_decision_explains_specific_missing_fields_and_clears_after_resolution(self):
+        data=extended(['b'],[]).model_dump(mode='json')
+        data['decisions']=[{'id':'review-b','first':'a','second':'b','relation':'unresolved'}]
+        result=calculate(Assessment.model_validate(data))
+        check=next(b for b in result['blockers'] if b['code']=='decision_review')
+        self.assertEqual(check['target'],'review-b')
+        for text in ['indoklás','igazoló forrás','ellenőrzés megerősítése']:
+            self.assertIn(text,check['message'])
+        data['decisions'][0].update(relation='partner',percent='30',reason='Igazolt partnerkapcsolat',source='Okirat',confirmed=True)
+        result=calculate(Assessment.model_validate(data))
+        self.assertTrue(result['ready'],result['blockers'])
+        self.assertEqual(result['years'][-1]['rows'][1]['percent'],'30')
+
+    def test_kinship_alone_does_not_change_aggregation(self):
+        data=extended(['b'],[]).model_dump(mode='json')
+        data['persons']=[{'id':'p1','name':'Első személy'},{'id':'p2','name':'Második személy'}]
+        data['ownerships']=[{'id':'o1','owner':'p1','company':'a','capital':'100','votes':'100','source':'Okirat'},
+                           {'id':'o2','owner':'p2','company':'b','capital':'100','votes':'100','source':'Okirat'}]
+        data['families']=[{'id':'f1','first':'p1','second':'p2','relationship':'testvér'}]
+        before=calculate(Assessment.model_validate(data))
+        self.assertEqual(before['years'][-1]['totals']['employees'],'2')
+        data['decisions']=[{'id':'d1','first':'a','second':'b','relation':'linked','basis':'persons',
+            'acting_together':'Közösen gyakorolt irányítás','market':'Azonos piacon működnek','reason':'Igazolt közös fellépés','source':'Nyilatkozat','confirmed':True}]
+        after=calculate(Assessment.model_validate(data))
+        self.assertTrue(after['ready'],after['blockers'])
+        self.assertEqual(after['years'][-1]['totals']['employees'],'12')
+
+    def test_financial_check_identifies_exact_company_and_year(self):
+        data=extended(['b'],[('a','b',60)]).model_dump(mode='json')
+        data['financials'][-1]['source']=''
+        check=next(b for b in calculate(Assessment.model_validate(data))['blockers'] if b['code']=='financial_source')
+        self.assertEqual((check['target'],check['year'],check['destination']),('b',2025,'financial'))
+
     def test_excel_reference_and_full_scenario(self):
         d=demonstration();r=calculate(d)
         self.assertEqual(r['years'][0]['totals'],{'employees':'126.5','turnover':'3273330500','balance':'1888382000'})

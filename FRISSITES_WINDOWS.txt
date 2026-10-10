@@ -1,0 +1,39 @@
+KKV műhely – a meglévő Windows-példány frissítése
+
+1. Állítsd le a korábban futó alkalmazást az indítóablakban Ctrl+C-vel.
+
+2. Készíts biztonsági másolatot a teljes régi programmappáról.
+   A data mappa tartalmazza a fiókokat, ügyeket és feltöltött dokumentumokat.
+   Ha korábban külön KKV_DATA_DIR-t használtál, annak tartalmáról is készíts másolatot,
+   és az új indításnál is ugyanazt a beállítást használd.
+
+3. Bontsd ki a frissítő ZIP-et egy ideiglenes mappába. A kibontott TARTALMAT
+   másold a meglévő programmappába, a programfájlok felülírásával.
+   Az app mappa, a requirements.txt és az INDITAS_WINDOWS.bat ugyanabban
+   a könyvtárban legyen, mint a meglévő data mappa.
+   Ne töröld a régi data mappát vagy az egyedi beállításaidat.
+   A frissítőcsomag nem tartalmaz adatbázist, ügyadatokat vagy fiókokat.
+
+4. Kattints duplán az INDITAS_WINDOWS.bat fájlra.
+   Python 3.11 vagy újabb és a csomagok telepítéséhez internet szükséges.
+   Az indító ellenőrzi/frissíti a függőségeket; az ablak maradjon nyitva.
+
+5. Amikor az ablakban megjelenik a „Uvicorn running” sor, nyisd meg:
+   http://127.0.0.1:8000
+   A böngészőben nyomj Ctrl+Shift+R-t, és lépj be a meglévő fiókoddal.
+   Ha a meglévő fiók helyett új munkatér létrehozását kéri, ne hozz létre
+   új fiókot: ellenőrizd a data mappa helyét és a korábbi KKV_DATA_DIR-t.
+
+6. PDF-exporthoz telepített LibreOffice szükséges.
+   Az indító a szokásos Program Files telepítést automatikusan felismeri.
+   A Word-export LibreOffice nélkül is használható.
+
+Ellenőrzendő változások:
+- Előzetes számítás, hiányok és konkrét javítási teendők.
+- Adatmódosításkor „Újraszámítás szükséges”; mentéskor friss eredmény.
+- Rokonsági tényállás és a kapcsolati döntés hatásának magyarázata.
+- Mozgatható, menthető, SVG/PNG-ként letölthető cégháló.
+- Indokolt Word/PDF állásfoglalás, részletes táblázatok és cégháló-mellékletek.
+
+A Windows-indító ebben a Linux fejlesztőkörnyezetben nem futtatható;
+az alkalmazás számítása és böngészős munkafolyamata itt ellenőrizve lett.

@@ -26,7 +26,8 @@ from .demo import demonstration
 from .engine import calculate, RULE_VERSION
 from .importers import import_excel, template_bytes
 from .models import Assessment
-from .reports import word_report
+from .reports import word_report, REPORT_FORMAT_VERSION
+from .report_text import report_summary
 
 db.initialize()
 app=FastAPI(title='KKV – Szakértői műhely',version='1.0.0',docs_url=None,redoc_url=None,openapi_url=None)
@@ -263,7 +264,10 @@ def get_case(cid:str,u=Depends(user)):
                     'totals':[{'year':y['year'],'totals':y['totals'],'label':y['label']} for y in c['years']]}
             d=json.loads(row['data']);return {'id':cid,'client_view':True,'title':d['title'],'purpose':d['purpose'],'years':d['years'],'status':'intake'}
         v=con.execute('SELECT calculation FROM versions WHERE case_id=? AND version=?',(cid,row['version'])).fetchone()
-        return {'id':cid,'data':json.loads(row['data']),'calculation':json.loads(v['calculation']),
+        # Drafts receive current actionable checks even when their last save predates the UI.
+        # Approved calculation snapshots retain their historical meaning.
+        calc=json.loads(v['calculation']) if row['status']=='approved' else calculate(Assessment.model_validate_json(row['data']))
+        return {'id':cid,'data':json.loads(row['data']),'calculation':calc,
             'version':row['version'],'status':row['status'],'approved_version':row['approved_version'],
             'client_user_id':row['client_user_id'],'updated':row['updated']}
 
@@ -412,6 +416,16 @@ def review_intake(cid:str,iid:str,u=Depends(staff)):
     return {'ok':True}
 
 
+@app.get('/api/cases/{cid}/report-summary')
+def report_preview(cid:str,u=Depends(staff)):
+    with db.connection() as con:
+        case=visible_case(con,cid,u)
+        row=con.execute('SELECT * FROM versions WHERE case_id=? AND version=?',(cid,case['version'])).fetchone()
+        data=Assessment.model_validate_json(row['data']);calc=json.loads(row['calculation'])
+        meta={'approved':bool(row['approved_at']),'version':case['version']}
+    return report_summary(data,calc,meta)
+
+
 @app.get('/api/cases/{cid}/report/{kind}')
 def report(cid:str,kind:str,version:int|None=None,u=Depends(user)):
     if kind not in ['docx','pdf']:raise HTTPException(404,'Ismeretlen exportformátum.')
@@ -423,7 +437,7 @@ def report(cid:str,kind:str,version:int|None=None,u=Depends(user)):
         data=Assessment.model_validate_json(row['data']);calc=json.loads(row['calculation'])
         meta={'id':cid,'version':v,'approved':bool(row['approved_at']),'approved_at':row['approved_at'],'approver':row['approver_name']}
     exports=db.data_dir()/'exports';exports.mkdir(exist_ok=True)
-    stem=f'{cid}-v{v}-'+('approved' if meta['approved'] else 'draft')
+    stem=f'{cid}-v{v}-'+('approved' if meta['approved'] else 'draft')+f'-report{REPORT_FORMAT_VERSION}'
     docpath=exports/(stem+'.docx')
     if not docpath.exists():
         raw=word_report(data,calc,meta)

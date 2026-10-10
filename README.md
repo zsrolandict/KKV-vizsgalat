@@ -34,7 +34,21 @@ py -m venv .venv
 6. Mentés: új verzió és friss számítás készül. Az „Ellenőrzés” nézet mutatja a véglegesítést akadályozó hiányokat.
 7. Szakértői jóváhagyás után a Word/PDF állásfoglalás átadható. Jóváhagyás előtt az export „TERVEZET”.
 
+Az ellenőrzések minden nyitott kérdésnél megmutatják a hiányzó tényt, annak jelentőségét és a szükséges teendőt. A **Rendezés** gomb az érintett cég, kapcsolat vagy beszámoló megfelelő évi adatához visz; az azonos kérdés érintett évei egy kártyán jelennek meg. A szerkesztőablakok **Mentés és újraszámítás** gombja az ügyet is menti, frissíti az ellenőrzéseket, és megmutatja a beszámítás változását. A táblázatban közvetlenül beírt éves adatokhoz továbbra is a fő **Mentés** gomb használható. Hiányzó indok vagy ellenőrzés esetén a kérdés megmarad, konkrét útmutatással.
+
+A rokonsági viszony mellett láthatók az érintett cégpárok és kapcsolati döntéseik. A rokonság rögzítése önmagában nem változtatja meg az összeszámítást; a közös fellépés és a releváns piaci kapcsolat külön igazolt döntést igényel.
+
+A **Cégháló** nézetben a szereplők húzással vagy nyílbillentyűkkel mozgathatók, a nyilak együtt mozognak velük. Az **Elrendezés mentése** az ügy új verziójában tárolja a pozíciókat; az elrendezés az évek közötti váltáskor is megmarad. Az **Automatikus elrendezés** visszaállítja az alaphelyzetet, amelyet külön el kell menteni. A háló SVG és PNG formátumban letölthető az aktuális pozíciókkal, minősítésekkel és hálóidőponttal. A képen jelöljük a nem mentett adatokat és az előzetes minősítést.
+
 Az elemző adatot szerkeszt. Jóváhagyó szakértő és adminisztrátor véglegesíthet. A jóváhagyó külön megerősíti a pénzügyi forrásokat, a kapcsolati tényállást és az alkalmazandó jogszabályi időállapotot. A rendszerbeli jóváhagyás nem elektronikus aláírás.
+
+## Generált állásfoglalás
+
+Az ügy adataiból felépített Word/PDF tartalmazza a megbízás tárgyát, az EUR- és HUF-határokat és árfolyamokat, a kapcsolati minősítéseket, az éves összeszámítás indokolását, a kétéves szabály levezetését és a következtetést. Több cég esetén külön 100%-os érzékenységvizsgálat is készül; ez nem önálló jogi minősítés. Mellékletként szerepelnek a részletes táblázatok, kapcsolati indokok, forrásadatok és az évenkénti cégháló a mentett pozíciókkal. A szöveges előnézet ugyanazt a generátort használja, mint az export. A besorolás kerekítés előtt, a hiányzó adatok jelölésével történik.
+
+A dokumentum A4-es, oldalszámozott; a széles mellékletek fekvő tájolásúak. Az export a kiválasztott mentett ügyverzió adataiból készül. Jóváhagyott verzióban szerepel a szakértő neve, a jóváhagyás ideje és a verziószám; a tervezet külön jelölt. A mintadokumentum kizárólag szerkezeti referencia, annak cégnevei és állításai nem kerülnek át az ügyekbe.
+
+Az ellenőrzési nézetben közvetlenül olvashatók a feldolgozatlan ügyfélválaszok. A jóváhagyás előtt a rendszer megmutatja a hiányzó feltételeket, és mindhárom szakértői visszaigazolást kéri. Mentési hiba esetén a szerkesztőablak megmarad a beírt adatokkal; újrapróbáláskor nem keletkezik második szereplő. A hibás számezők mellett szöveges javítási útmutató jelenik meg.
 
 ## Ügyfélhozzáférés
 

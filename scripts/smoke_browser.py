@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.request import urlopen
 from docx import Document
 from playwright.sync_api import sync_playwright, expect
+from browser_guided import validate_guided_workflow
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'test-results'
@@ -45,6 +46,13 @@ def main():
                 page.locator('[name=password]').fill(password)
                 page.locator('#auth-form [type=submit]').click()
                 page.get_by_role('heading',name='Ügyeid, egy helyen.').wait_for()
+                try:
+                    validate_guided_workflow(page,OUT)
+                except Exception:
+                    page.screenshot(path=str(OUT/'guided-failure.png'),full_page=True)
+                    # Report workflow state only; never log account or form credentials.
+                    print(page.evaluate('() => ({dirty:S.dirty,year:S.year,modal:S.modal?.kind,checks:S.calc?.blockers,financialSources:S.data?.financials.map(f=>({company:f.company,year:f.year,source:f.source})),errors:[...document.querySelectorAll(".toast.error, .modal-error:not(.hide)")].map(e=>e.textContent)})'))
+                    raise
                 page.locator('.hero [data-action=demo]').click()
                 page.locator('.result-card h2').wait_for()
                 assert page.locator('.result-card h2').inner_text()=='Középvállalkozás'
@@ -71,6 +79,12 @@ def main():
                 cid=page.evaluate('S.cid')
                 page.locator('.tabs [data-action=tab][data-tab=financials]').click()
                 page.locator('[data-fin=employees]').wait_for()
+                page.locator('[data-fin=employees]').fill('hibás szám')
+                expect(page.locator('#recalculation-notice')).to_contain_text('Újraszámítás szükséges')
+                expect(page.locator('[data-fin=employees]')).to_have_attribute('aria-invalid','true')
+                expect(page.locator('.field-error')).to_contain_text('Pozitív számot')
+                page.locator('[data-fin=employees]').fill('2')
+                expect(page.locator('[data-fin=employees]')).to_have_attribute('aria-invalid','false')
                 for year in [2025,2024]:
                     page.locator(f'[data-action=year][data-year="{year}"]').click()
                     page.locator('[data-fin=employees]').fill('2')
@@ -83,7 +97,7 @@ def main():
                     page.locator('[data-rate=source]').fill('MNB – tesztforrás')
                     page.locator('[data-rate=confirmed]').check()
                 page.locator('[data-action=save]').click()
-                expect(page.locator('[data-action=save]')).to_be_disabled(); assert page.locator('.tabs .tab-badge').count()==0
+                expect(page.locator('[data-action=save]')).to_be_disabled(); expect(page.locator('#recalculation-notice')).to_be_empty(); assert page.locator('.tabs .tab-badge').count()==0
                 page.locator('.tabs [data-action=tab][data-tab=review]').click()
                 page.locator('#approval-form').wait_for()
                 for name in ['financials','relationships','rules']:page.locator(f'#approval-form [name={name}]').check()
@@ -108,6 +122,7 @@ def main():
                 page.locator('#modal-form [name=username]').fill('customer')
                 page.locator('#modal-form [name=password]').fill(password)
                 page.locator('#modal-form [name=role]').select_option('client')
+                assert page.locator('#modal-form').evaluate('(f)=>f.checkValidity()'), page.locator('#modal-form').evaluate('(f)=>[...f.elements].filter(e=>e.validity&&!e.validity.valid).map(e=>({name:e.name,message:e.validationMessage,length:e.value.length}))')
                 page.locator('#modal-form [type=submit]').click()
                 page.get_by_text('Teszt Ügyfél',exact=True).wait_for()
                 page.goto(URL+f'/#case/{cid}/overview')
@@ -116,7 +131,7 @@ def main():
                 uid=page.locator('[name=client_user_id] option').filter(has_text='Teszt Ügyfél').get_attribute('value')
                 page.locator('[name=client_user_id]').select_option(uid)
                 page.locator('#modal-form [type=submit]').click()
-                page.locator('[data-action=save]').click();expect(page.locator('[data-action=save]')).to_be_disabled()
+                expect(page.locator('[data-action=save]')).to_be_disabled()
                 customer_context=browser.new_context(viewport={'width':1440,'height':1000},accept_downloads=True,locale='hu-HU')
                 customer=customer_context.new_page();customer.on('pageerror',lambda e:errors.append(str(e)))
                 customer.goto(URL);customer.locator('[name=username]').fill('customer');customer.locator('[name=password]').fill(password)
