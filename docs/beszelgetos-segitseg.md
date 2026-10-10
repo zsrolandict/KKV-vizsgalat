@@ -4,9 +4,9 @@ Az ügy tetején a **Beszélgetős segítség** gomb nyitja meg. A KKV-program e
 
 ## API beállítása
 
-Adminisztrátorként nyisd ki az **AI-kapcsolat beállítása** részt. Add meg az OpenAI API-kulcsot és a használható modell nevét (alapértelmezés: `gpt-4.1-mini`), majd mentsd. A kulcsot a gép `data/ai-settings.json` fájlja tárolja; a program nem küldi vissza a böngészőnek. A `data` mappát és mentéseit a kulcs miatt is kezeld bizalmasan. Környezeti változóval az `OPENAI_API_KEY` és `OPENAI_MODEL` is használható, ezek elsőbbséget élveznek. A ChatGPT-előfizetés nem helyettesíti az API-szolgáltatást; annak használata külön díjazású lehet.
+Adminisztrátorként nyisd ki az **AI-kapcsolat beállítása** részt. Válaszd ki a **Google Gemini** vagy **OpenAI** szolgáltatót, add meg a hozzá tartozó API-kulcsot és a fiókoddal elérhető modell nevét, majd mentsd. Gemini esetén az alapérték `gemini-2.5-flash`, OpenAI esetén `gpt-4.1-mini`; ha a szolgáltató ezt a modellt már nem kínálja a fiókodban, add meg az ott elérhető modell azonosítóját. Szolgáltatóváltáskor új kulcs szükséges, a másik szolgáltató kulcsát nem használja fel a program. A kulcsot a gép `data/ai-settings.json` fájlja tárolja; a program nem küldi vissza a böngészőnek. A `data` mappát és mentéseit a kulcs miatt is kezeld bizalmasan. Környezeti változóval Geminihez a `GEMINI_API_KEY` és `GEMINI_MODEL`, OpenAI-hoz az `OPENAI_API_KEY` és `OPENAI_MODEL` használható. A `KKV_AI_PROVIDER` értéke `gemini` vagy `openai` lehet; csak a kiválasztott szolgáltató kulcsát veszi figyelembe a program. A környezeti beállítások elsőbbséget élveznek. A ChatGPT-előfizetés nem helyettesíti az API-szolgáltatást; annak használata külön díjazású lehet.
 
-A program jelenleg az OpenAI Chat Completions API-hoz kapcsolódik. Nincs böngészőoldali közvetlen szolgáltatóhívás, nincs tetszőleges külső API-cím. API nélkül a helyi szabálymotor hiánymagyarázata elérhető, de ez nem értelmez szabad szöveget és nem készít automatikus kitöltést.
+A program a Google Gemini natív `generateContent` API-jához vagy az OpenAI Chat Completions API-hoz kapcsolódik. Nincs böngészőoldali közvetlen szolgáltatóhívás, nincs tetszőleges külső API-cím. API nélkül a helyi szabálymotor hiánymagyarázata elérhető, de ez nem értelmez szabad szöveget és nem készít automatikus kitöltést.
 
 ## Beszélgetés és kitöltés
 

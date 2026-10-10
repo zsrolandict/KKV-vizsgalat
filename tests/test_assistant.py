@@ -16,7 +16,7 @@ from .helpers import sample, extended
 class AssistantTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
-        self.env=patch.dict(os.environ,{'KKV_DATA_DIR':self.tmp.name,'OPENAI_API_KEY':'','OPENAI_MODEL':''});self.env.start();db.initialize()
+        self.env=patch.dict(os.environ,{'KKV_DATA_DIR':self.tmp.name,'OPENAI_API_KEY':'','OPENAI_MODEL':'','GEMINI_API_KEY':'','GEMINI_MODEL':'','KKV_AI_PROVIDER':''});self.env.start();db.initialize()
         self.client=TestClient(app)
         auth=self.client.post('/api/auth/setup',json={'name':'Tesztelő','username':'expert','password':secrets.token_urlsafe(24)}).json()
         self.headers={'X-CSRF-Token':auth['csrf']}
@@ -108,6 +108,64 @@ class AssistantTests(unittest.TestCase):
             self.assertEqual(result.status_code,200)
             text=(db.data_dir()/'ai-settings.json').read_text()
             self.assertNotIn('injected-secret',text)
+
+    def test_gemini_native_api_request_and_json_response(self):
+        self.client.post('/api/assistant/settings',json={'provider':'gemini','api_key':'gemini-test-secret'},headers=self.headers)
+        settings=self.client.get('/api/assistant/settings').json()
+        self.assertEqual(settings['provider'],'gemini')
+        self.assertEqual(settings['model'],'gemini-2.5-flash')
+        self.assertNotIn('gemini-test-secret',str(settings))
+        transport=AsyncMock()
+        response=unittest.mock.Mock(status_code=200)
+        response.json.return_value={'candidates':[{'finishReason':'STOP','content':{'parts':[{'thought':True,'text':'internal'},{'text':json.dumps({'answer':'A forrás és a rokonság pontosítása kell.','changes':[{'field':'assumptions','value':'Felhasználói nyilatkozat.','explanation':'A válasz rögzítése.'}]})}]}}]}
+        transport.post.return_value=response
+        with patch('app.assistant_api.httpx.AsyncClient') as factory:
+            factory.return_value.__aenter__.return_value=transport
+            result=self.discuss(use_ai=True)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(result.json()['proposed_data']['assumptions'],'Felhasználói nyilatkozat.')
+        self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['data']['assumptions'],'')
+        call=transport.post.call_args
+        self.assertEqual(call.args[0],'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent')
+        self.assertNotIn('gemini-test-secret',call.args[0])
+        self.assertEqual(call.kwargs['headers']['x-goog-api-key'],'gemini-test-secret')
+        payload=call.kwargs['json']
+        self.assertEqual(payload['generationConfig']['responseMimeType'],'application/json')
+        self.assertEqual(len(payload['contents']),1)
+        self.assertEqual(len(payload['contents'][0]['parts']),2)
+        self.assertIn('systemInstruction',payload)
+
+    def test_gemini_blocked_or_truncated_response_never_applies(self):
+        self.client.post('/api/assistant/settings',json={'provider':'gemini','api_key':'gemini-test-secret'},headers=self.headers)
+        transport=AsyncMock();response=unittest.mock.Mock(status_code=200);transport.post.return_value=response
+        for body in [{'candidates':[],'promptFeedback':{'blockReason':'SAFETY'}},{'candidates':[{'finishReason':'MAX_TOKENS','content':{'parts':[{'text':'incomplete'}]}}]}]:
+            response.json.return_value=body
+            with patch('app.assistant_api.httpx.AsyncClient') as factory:
+                factory.return_value.__aenter__.return_value=transport
+                failure=self.discuss(use_ai=True)
+            self.assertEqual(failure.status_code,502)
+            self.assertIn('nem adott teljes választ',failure.text)
+            self.assertNotIn('gemini-test-secret',failure.text)
+        self.assertEqual(self.client.get('/api/cases/'+self.cid).json()['version'],1)
+
+    def test_provider_switch_cannot_reuse_the_other_provider_key(self):
+        self.client.post('/api/assistant/settings',json={'provider':'openai','api_key':'openai-test-secret'},headers=self.headers)
+        self.client.post('/api/assistant/settings',json={'provider':'gemini'},headers=self.headers)
+        settings=self.client.get('/api/assistant/settings').json()
+        self.assertEqual(settings['provider'],'gemini');self.assertFalse(settings['configured'])
+        self.assertNotIn('openai-test-secret',(db.data_dir()/'ai-settings.json').read_text())
+
+    def test_legacy_openai_settings_and_provider_specific_environment(self):
+        (db.data_dir()/'ai-settings.json').write_text(json.dumps({'api_key':'legacy-secret','model':'gpt-4.1-mini'}))
+        self.assertEqual(self.client.get('/api/assistant/settings').json()['provider'],'openai')
+        self.client.post('/api/assistant/settings',json={'provider':'gemini'},headers=self.headers)
+        with patch.dict(os.environ,{'OPENAI_API_KEY':'unrelated-secret'}):
+            self.assertFalse(self.client.get('/api/assistant/settings').json()['configured'])
+        with patch.dict(os.environ,{'GEMINI_API_KEY':'injected-gemini-secret','GEMINI_MODEL':'gemini-custom'}):
+            settings=self.client.get('/api/assistant/settings').json()
+            self.assertTrue(settings['configured']);self.assertEqual(settings['model'],'gemini-custom')
+            self.client.post('/api/assistant/settings',json={'provider':'gemini'},headers=self.headers)
+            self.assertNotIn('injected-gemini-secret',(db.data_dir()/'ai-settings.json').read_text())
 
     def test_invalid_date_error_is_readable(self):
         raw=sample().model_dump(mode='json');raw['rates'][0]['quoted']='224420-02-04'
