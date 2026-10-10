@@ -1,7 +1,6 @@
 import hashlib
 import json
 import os
-import subprocess
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -10,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import Field
 
-from .tool_paths import configured_tool
+from .pdf_export import convert as convert_pdf, PDFExportError
 from . import db, tao_db
 from .models import Model
 from .tao_engine import calculate
@@ -129,7 +128,7 @@ def build_router(user, staff, reviewer):
             # A saved opinion cannot silently remain confirmed when its evidence changes.
             fields = ('voting_facts', 'family_facts', 'control_facts', 'management_facts',
                       'establishment_facts', 'trust_facts', 'companies', 'persons',
-                      'law_date', 'law_source', 'law_applicability', 'scope')
+                      'law_date', 'law_source', 'law_applicability', 'scope', 'market_analysis', 'legal_references')
             if any(getattr(previous, key) != getattr(payload.data, key) for key in fields):
                 for decision in payload.data.decisions:
                     if decision.confirmed and decision in previous.decisions:
@@ -279,7 +278,7 @@ def build_router(user, staff, reviewer):
         else:
             folder = db.data_dir() / 'exports' / 'tao'
             folder.mkdir(parents=True, exist_ok=True)
-            stem = f'{cid}-v{v}-format2-' + ('approved' if approved else 'draft')
+            stem = f'{cid}-v{v}-format4-' + ('approved' if approved else 'draft')
             path = folder / (stem + '.docx')
             if not path.exists():
                 with tempfile.NamedTemporaryFile(dir=folder, delete=False) as temp:
@@ -289,16 +288,9 @@ def build_router(user, staff, reviewer):
             if kind == 'pdf':
                 path = folder / (stem + '.pdf')
                 if not path.exists():
-                    try:
-                        with tempfile.TemporaryDirectory(dir=folder) as temp_dir:
-                            subprocess.run([configured_tool('soffice') or 'soffice', f'-env:UserInstallation={Path(temp_dir).as_uri()}/profile', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, str(folder / (stem + '.docx'))],
-                                           check=True, timeout=60, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                            pdf = Path(temp_dir) / (stem + '.pdf')
-                            if not pdf.exists():
-                                raise RuntimeError('Nem keletkezett PDF.')
-                            os.replace(pdf, path)
-                    except (OSError, subprocess.SubprocessError, RuntimeError):
-                        raise HTTPException(503, 'A PDF-konverzió nem sikerült. A Word-export elérhető.')
+                    try: convert_pdf(folder / (stem + '.docx'), path)
+                    except PDFExportError as exc: raise HTTPException(503, str(exc)) from None
+
             output = FileResponse(path, filename=f'Tao_allasfoglalas_v{v}.{kind}', media_type='application/pdf' if kind == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         with db.connection() as con:
             tao_db.audit(con, cid, u['id'], 'report_downloaded', f'{v}. verzió; {kind}; {meta["label"]}')

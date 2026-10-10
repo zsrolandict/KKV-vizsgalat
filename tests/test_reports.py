@@ -56,3 +56,29 @@ class ReportTests(unittest.TestCase):
         self.assertIn('Minta Szakértő',' '.join(p.text for p in doc.paragraphs))
         self.assertNotIn('TERVEZET',doc.sections[0].header.paragraphs[0].text)
         self.assertIn('9. Jogi keret',' '.join(p.text for p in doc.paragraphs))
+
+    def test_market_analysis_assumptions_and_reviewed_authorities_are_case_specific(self):
+        from app.models import Assessment
+        raw=extended(['b'],[]).model_dump(mode='json')
+        raw['market_analysis']='A szolgáltatások azonos földrajzi piacon történő nyújtását a szerződések igazolják.'
+        raw['assumptions']='A megbízói adatokat az átadott nyilatkozat szerint kezeljük.'
+        raw['legal_references']=[{'id':'r','case_number':'C-110/13','title':'HaTeFo',
+            'url':'https://eur-lex.europa.eu/legal-content/HU/TXT/?uri=CELEX:62013CJ0110',
+            'relevance':'Az ügyre vonatkozó közös fellépés értékelése.','checked':True}]
+        raw['report_issuer']='Minta ügyvédi iroda'
+        data=Assessment.model_validate(raw);doc=Document(BytesIO(word_report(data,calculate(data),{'id':'case','version':1,'approved':False})))
+        text='\n'.join(p.text for p in doc.paragraphs)
+        for needle in [raw['market_analysis'],raw['assumptions'],'C-110/13','Ügyre vonatkozó értékelés','Minta ügyvédi iroda','Feltételezések és korlátozások']:
+            self.assertIn(needle,text)
+        self.assertEqual(doc.styles['Normal'].font.name,'Garamond')
+        self.assertNotIn('C-53/17',text)
+        self.assertIn('végleges KKV-minősítése', '\n'.join(c.text for t in doc.tables for r in t.rows for c in r.cells))
+
+    def test_unreviewed_or_unsafe_authorities_cannot_be_silently_applied(self):
+        from app.models import LegalReference
+        from app.opinion_support import add_authorities
+        candidate=LegalReference(id='r',case_number='C-110/13',url='https://eur-lex.europa.eu/')
+        data=sample();data.legal_references=[candidate];doc=Document();add_authorities(doc,data)
+        self.assertIn('még nincs ellenőrizve',' '.join(p.text for p in doc.paragraphs))
+        with self.assertRaises(ValueError):LegalReference(id='r',case_number='C-110/13',checked=True)
+        with self.assertRaises(ValueError):LegalReference(id='r',case_number='x',url='javascript:alert(1)')

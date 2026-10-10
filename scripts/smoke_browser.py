@@ -12,7 +12,7 @@ from urllib.request import urlopen
 from docx import Document
 from playwright.sync_api import sync_playwright, expect
 from browser_guided import validate_guided_workflow, validate_year_confirmation
-from browser_tao import validate_tao_workflow
+from browser_tao import validate_tao_workflow, validate_tao_demo_decisions
 
 ROOT=Path(__file__).resolve().parent.parent
 OUT=ROOT/'test-results'
@@ -53,6 +53,7 @@ def main():
                     validate_guided_workflow(page,OUT)
                     validate_year_confirmation(page)
                     validate_tao_workflow(page,OUT)
+                    validate_tao_demo_decisions(page,OUT)
                     page.goto(URL)
                     page.get_by_role("heading",name="Ügyeid, egy helyen.").wait_for()
                 except Exception:

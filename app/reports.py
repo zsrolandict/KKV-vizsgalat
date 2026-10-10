@@ -12,10 +12,11 @@ from docx.oxml.ns import qn
 from .engine import LABELS, LIMITS
 from .report_text import RELATIONS, hu, money, report_summary
 from .report_graph import graph_image
+from .opinion_support import market_paragraphs, assumptions, add_authorities, signoff
 
 # Increment when the format changes, so old cached exports refresh.
-REPORT_FORMAT_VERSION = '3'
-GREEN, PALE, INK = '234B3F', 'EDF3E8', '28372E'
+REPORT_FORMAT_VERSION = '4'
+GREEN, PALE, INK = '202020', 'F3F3F3', '202020'
 
 
 def shade(cell, color):
@@ -28,19 +29,25 @@ def page_field(paragraph, name):
     paragraph._p.append(field)
 
 
+def spacer(doc):
+    p=doc.add_paragraph();p.add_run().font.size=Pt(1)
+    p.paragraph_format.space_before=Pt(0);p.paragraph_format.space_after=Pt(2);p.paragraph_format.line_spacing=Pt(2)
+    return p
+
+
 def add_table(doc, headers, rows, widths, numeric=()):
     table = doc.add_table(rows=1, cols=len(headers)); table.autofit = False
     for column, width in zip(table.columns, widths): column.width = Cm(width)
     table.rows[0]._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
     for i, value in enumerate(headers):
-        cell = table.rows[0].cells[i]; cell.text = value; shade(cell, GREEN)
+        cell = table.rows[0].cells[i]; cell.text = value; shade(cell, "E8E8E8")
         for run in cell.paragraphs[0].runs:
-            run.font.bold = True; run.font.color.rgb = RGBColor(255, 255, 255)
+            run.font.bold = True; run.font.color.rgb = RGBColor.from_string(INK)
     for index, values in enumerate(rows):
         cells = table.add_row().cells
         for i, value in enumerate(values):
             cells[i].text = str(value)
-            if index % 2 == 0: shade(cells[i], 'F3F6F0')
+            if index % 2 == 0: shade(cells[i], 'FAFAFA')
     for row in table.rows:
         row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
         for i, cell in enumerate(row.cells):
@@ -52,69 +59,81 @@ def add_table(doc, headers, rows, widths, numeric=()):
             for p in cell.paragraphs:
                 p.paragraph_format.space_after = Pt(0); p.paragraph_format.space_before = Pt(0); p.paragraph_format.line_spacing = 1.05
                 if i in numeric: p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                for run in p.runs: run.font.name = 'Liberation Sans'; run.font.size = Pt(8.5)
-    doc.add_paragraph().paragraph_format.space_after = Pt(0)
+                for run in p.runs: run.font.name = 'Garamond'; run.font.size = Pt(9.5)
+    spacer(doc)
     return table
 
 
 def summary_box(doc, label, text, draft=False):
-    table = doc.add_table(rows=1, cols=1); cell = table.cell(0, 0)
-    shade(cell, 'FFF4DF' if draft else PALE)
-    cell.paragraphs[0].add_run(label.upper()).bold = True
-    cell.add_paragraph(text)
-    for p in cell.paragraphs:
-        for run in p.runs: run.font.name = 'Liberation Sans'; run.font.color.rgb = RGBColor.from_string(GREEN)
-    doc.add_paragraph().paragraph_format.space_after = Pt(0)
+    table=doc.add_table(rows=1,cols=2);table.autofit=False
+    table.columns[0].width=Cm(3.2);table.columns[1].width=Cm(14.3)
+    table.cell(0,0).text=label;table.cell(0,1).text=text
+    for cell in table.rows[0].cells:
+        shade(cell,'F5F5F5')
+        for p in cell.paragraphs:
+            p.paragraph_format.space_after=Pt(4)
+            for run in p.runs:run.font.name='Garamond';run.font.size=Pt(12)
+    table.cell(0,0).paragraphs[0].runs[0].bold=True
+    table.rows[0]._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+    spacer(doc)
 
 
 def new_section(doc, landscape=False):
     section = doc.add_section(WD_SECTION_START.NEW_PAGE)
     section.orientation = WD_ORIENT.LANDSCAPE if landscape else WD_ORIENT.PORTRAIT
     section.page_width, section.page_height = (Cm(29.7), Cm(21)) if landscape else (Cm(21), Cm(29.7))
-    section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Cm(1.8)
+    section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Cm(1.75)
     return section
 
 
-def configure(doc, data, calculation, metadata):
+def configure(doc, data, calculation, metadata, tao=False):
     section = doc.sections[0]
     section.page_width, section.page_height = Cm(21), Cm(29.7)
-    section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Cm(1.8)
+    section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Cm(1.75)
     section.header_distance = section.footer_distance = Cm(.8)
-    normal = doc.styles['Normal']; normal.font.name = 'Liberation Serif'; normal.font.size = Pt(11)
+    normal = doc.styles['Normal']; normal.font.name = 'Garamond'; normal.font.size = Pt(12)
     normal.font.color.rgb = RGBColor.from_string(INK)
-    normal.paragraph_format.line_spacing = 1.12; normal.paragraph_format.space_after = Pt(6)
-    for name, size in [('Title', 26), ('Subtitle', 15), ('Heading 1', 14), ('Heading 2', 11), ('Heading 3', 10)]:
-        style = doc.styles[name]; style.font.name = 'Liberation Sans'; style.font.size = Pt(size)
+    normal.paragraph_format.line_spacing = 1.05; normal.paragraph_format.space_after = Pt(4)
+    for name, size in [('Title', 20), ('Subtitle', 12), ('Heading 1', 13), ('Heading 2', 12), ('Heading 3', 12)]:
+        style = doc.styles[name]; style.font.name = 'Garamond'; style.font.bold = name != 'Subtitle'; style.font.size = Pt(size)
         style.font.color.rgb = RGBColor.from_string(GREEN); style.paragraph_format.keep_with_next = True
-        style.paragraph_format.space_before = Pt(14 if name == 'Heading 1' else 7); style.paragraph_format.space_after = Pt(6)
+        style.paragraph_format.space_before = Pt(10 if name == 'Heading 1' else 5); style.paragraph_format.space_after = Pt(4)
     for name in ['Header', 'Footer', 'Caption']:
-        doc.styles[name].font.name = 'Liberation Sans'; doc.styles[name].font.size = Pt(8)
-        doc.styles[name].font.color.rgb = RGBColor.from_string('637360')
+        doc.styles[name].font.name = 'Garamond'; doc.styles[name].font.size = Pt(8)
+        doc.styles[name].font.color.rgb = RGBColor.from_string('606060')
+    # Clear theme fonts and the template's colored title border: Word and LibreOffice
+    # should use the same explicit serif typography, including headings.
+    for element in doc.styles.element.iter(qn('w:rFonts')):
+        for attr in list(element.attrib):
+            if 'theme' in attr.lower(): del element.attrib[attr]
+        for script in ('ascii','hAnsi','eastAsia','cs'): element.set(qn('w:'+script),'Garamond')
+    for border in list(doc.styles['Title'].element.iter(qn('w:pBdr'))):border.getparent().remove(border)
     header = section.header.paragraphs[0]
-    header.text = 'KKV MŰHELY  /  SZAKÉRTŐI ÁLLÁSFOGLALÁS' + ('' if metadata['approved'] else '  /  TERVEZET')
+    header.text = ('TAO' if tao else 'KKV') + ' / SZAKÉRTŐI ÁLLÁSFOGLALÁS' + ('' if metadata['approved'] else '  /  TERVEZET')
     borders = OxmlElement('w:pBdr'); bottom = OxmlElement('w:bottom')
-    for key, value in [('val', 'single'), ('sz', '5'), ('color', 'CAD8C2'), ('space', '7')]: bottom.set(qn('w:'+key), value)
+    for key, value in [('val', 'single'), ('sz', '5'), ('color', 'C8C8C8'), ('space', '7')]: bottom.set(qn('w:'+key), value)
     borders.append(bottom); header._p.get_or_add_pPr().append(borders)
     footer = section.footer.paragraphs[0]; footer.text = f'{metadata["id"][:8]} · {metadata["version"]}. ügyverzió  |  '
     page_field(footer, 'PAGE'); footer.add_run(' / '); page_field(footer, 'NUMPAGES'); footer.add_run(' oldal')
     footer.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     settings = OxmlElement('w:updateFields'); settings.set(qn('w:val'), 'true'); doc.settings.element.append(settings)
-    doc.core_properties.title = f'{next(c.name for c in data.companies if c.id == data.root)} – KKV-állásfoglalás'
-    doc.core_properties.subject = f'{", ".join(map(str, sorted(data.years)))} · {metadata["version"]}. ügyverzió'
-    doc.core_properties.author = metadata.get('approver') or 'KKV műhely'
+    doc.core_properties.title = data.title+' – '+('Tao' if tao else 'KKV')+'-állásfoglalás'
+    doc.core_properties.subject = f'{", ".join(map(str, sorted(getattr(data, 'years', [data.as_of.year]))))} · {metadata["version"]}. ügyverzió'
+    doc.core_properties.author = data.report_issuer or data.report_signatory or metadata.get('approver') or 'Szakértői állásfoglalás'
 
 
 def word_report(data, calculation, metadata):
     doc = Document(); configure(doc, data, calculation, metadata)
     summary = report_summary(data, calculation, metadata)
     root = next(c for c in data.companies if c.id == data.root)
-    doc.add_heading('Állásfoglalás', 0); doc.add_paragraph('a vállalkozás KKV-minősítéséről', style='Subtitle')
-    p = doc.add_paragraph(root.name); p.runs[0].bold = True; p.runs[0].font.size = Pt(16)
+    title=doc.add_heading('állásfoglalás',0);title.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    subtitle=doc.add_paragraph('– A '+root.name+' KKV-minősítése vonatkozásában –',style='Subtitle');subtitle.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    p = doc.add_paragraph(root.name); p.runs[0].bold = True; p.runs[0].font.size = Pt(12)
     doc.add_paragraph(f'{", ".join(map(str, sorted(data.years)))}. üzleti évek • Vizsgálat napja: {data.as_of.isoformat()}', style='Caption')
     summary_box(doc, 'Jóváhagyott megállapítás' if metadata['approved'] else 'Tervezet · előzetes megállapítás', summary['conclusion'], not metadata['approved'])
     if not metadata['approved']: doc.add_paragraph('TERVEZET – szakértői jóváhagyás nélkül végleges állásfoglalásként nem használható.', style='Caption')
 
-    doc.add_heading('1. A megbízás tárgya és a vizsgálat kerete', 1); doc.add_paragraph(summary['opening'])
+    doc.add_heading('1. A megbízott feladata és a vizsgálat kerete', 1); doc.add_paragraph(summary['opening'])
     add_table(doc, ['Vizsgálati adat', 'Rögzített érték'], [
         ['Megbízó', data.client or 'Nincs külön megadva'], ['Vizsgált társaság', root.name],
         ['Cégazonosító', root.registration or 'Nincs rögzítve'],
@@ -122,7 +141,7 @@ def word_report(data, calculation, metadata):
         ['Háló alkalmazása', 'Évenként az üzleti év zárónapja' if data.structure_basis == 'period_end' else 'A vizsgálat napja'],
         ['Ügyverzió / szabályverzió', f'{metadata["version"]}. verzió / {calculation["rule_version"]}']], [5, 12.4])
 
-    doc.add_heading('2. Gazdasági mutatók, értékhatárok és árfolyamok', 1)
+    doc.add_heading('2. Megállapítások – gazdasági mutatók és értékhatárok', 1)
     doc.add_paragraph('A méretbesorolás az éves létszám, az éves nettó árbevétel és a mérlegfőösszeg alapján történik. A létszámfeltételnek és legalább az egyik pénzügyi feltételnek együttesen kell teljesülnie. A létszámhatár szigorú (<), a pénzügyi határérték megengedett (≤).')
     add_table(doc, ['Kategória', 'Létszám', 'Árbevétel, EUR', 'Mérleg, EUR'],
         [[LABELS[k], '< '+hu(n, 0), '≤ '+hu(t, 0), '≤ '+hu(b, 0)] for k, (n, t, b) in zip(['micro', 'small', 'medium'], LIMITS)], [5.1, 2.3, 5, 5], numeric=(1, 2, 3))
@@ -144,6 +163,9 @@ def word_report(data, calculation, metadata):
     pr = data.public_review
     if any(c.kind == 'public' for c in data.companies) or pr.capital or pr.votes or pr.exception:
         doc.add_paragraph(f'Közjogi részesedés: a rögzített szakértői összesítés {hu(pr.capital)}% tőke és {hu(pr.votes)}% szavazat; {"ellenőrzött" if pr.confirmed else "ellenőrizendő"}. Indoklás: {pr.reason or "nincs rögzítve"}. '+('Kivétel alkalmazását jelölték; igazolása a rögzített indokolás szerint vizsgálandó.' if pr.exception else ''))
+
+    doc.add_heading('Azonos / szomszédos piac és közös fellépés értékelése',2)
+    for text in market_paragraphs(data): doc.add_paragraph(text)
 
     doc.add_heading('4. Éves összeszámítás és méretbesorolás', 1)
     annual_rows = lambda years: [[str(y['year']), hu(y['totals']['employees']), money(y['totals']['turnover']), money(y['totals']['balance']), y['label']+(' · hiányos adat' if not y['complete'] else '')] for y in years]
@@ -174,7 +196,8 @@ def word_report(data, calculation, metadata):
         doc.add_heading('Rögzített szakértői kiegészítés', 2); doc.add_paragraph(data.conclusion_notes)
 
     doc.add_heading('8. Források, feltételezések és nyitott kérdések', 1)
-    doc.add_paragraph(data.assumptions or 'A vizsgálat a rögzített forrásadatokra és kapcsolati döntésekre épül. A tényállás, a vizsgált időpont vagy a forrásadatok változása új vizsgálatot és szükség esetén új jóváhagyást igényel.')
+    doc.add_heading('Feltételezések és korlátozások',2)
+    for text in assumptions(data): doc.add_paragraph(text,style='List Bullet')
     sources = sorted({f.source for f in data.financials if f.source} | {o.source for o in data.ownerships if o.source} | {d.source for d in data.decisions if d.source} | {f.source for f in data.families if f.source})
     if sources:
         doc.add_heading('Rögzített igazoló források', 2)
@@ -199,6 +222,8 @@ def word_report(data, calculation, metadata):
     doc.add_paragraph(f'Ellenőrzött jogi időállapot: {data.law_date or "nincs rögzítve"}. Forrás: {data.law_source or "nincs rögzítve"}. Történeti alkalmazhatóság: {data.law_applicability or "nem igényel külön indokot"}.')
     doc.add_paragraph('Magyar profil: a 2004. évi XXXIV. törvény a kis- és középvállalkozásokról, fejlődésük támogatásáról. EU-profil: a 2003/361/EK ajánlás és a vizsgálat céljára alkalmazandó uniós rendelkezések. Az alkalmazandó időállapotot, kivételeket és a szabályok konkrét ügyre való alkalmazhatóságát a jóváhagyó szakértő ellenőrzi.')
     doc.add_paragraph('Transzferár esetén az adott adóév társaságiadó- és nyilvántartási szabályai, a kapcsolt ügyletek és a mentességek külön vizsgálandók. A méretkategória önmagában nem állapít meg ügyletszintű nyilvántartási kötelezettséget.')
+    doc.add_heading('Alkalmazott jogszabályok és bírósági döntések',2)
+    add_authorities(doc,data)
     if metadata['approved']:
         stamp = datetime.fromisoformat(metadata['approved_at']).astimezone(ZoneInfo('Europe/Budapest')).strftime('%Y.%m.%d. %H:%M')
         doc.add_paragraph('Jóváhagyó szakértő: '+metadata['approver'])
@@ -206,6 +231,7 @@ def word_report(data, calculation, metadata):
         doc.add_paragraph('A rendszerbeli jóváhagyás nem elektronikus aláírás. A dokumentum aláírása a szolgáltató munkafolyamata szerint történik.', style='Caption')
     else: doc.add_paragraph('Szakértői jóváhagyás még nem történt. A dokumentum tervezet.')
 
+    signoff(doc,data,metadata)
     new_section(doc, landscape=True)
     doc.add_heading('1. melléklet – részletes éves gazdasági mutatók', 1)
     doc.add_paragraph('A táblázat a jogcím szerinti súlyozás után figyelembe vett értékeket tartalmazza, nem a súlyozás előtti egyedi beszámolót.', style='Caption')

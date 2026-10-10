@@ -38,12 +38,14 @@ def extract(path: Path, filename: str):
         raise RuntimeError('A PDF-kiolvasó nem található. Windowson indítsa az alkalmazást az Inditas-Windows.cmd fájllal, és adja meg a kicsomagolt Poppler mappáját. Linuxon a poppler-utils csomag szükséges.')
     try:
         run = subprocess.run([tool, '-layout', '-enc', 'UTF-8', str(path), '-'], capture_output=True, timeout=30)
-    except FileNotFoundError:
+    except OSError:
         raise RuntimeError('A beállított PDF-kiolvasó nem indítható. Ellenőrizze a Poppler útvonalát, majd indítsa újra az alkalmazást.')
     except subprocess.TimeoutExpired:
         raise ValueError('A PDF feldolgozása túllépte a megengedett időt.')
     if run.returncode:
-        raise ValueError('A PDF nem olvasható; lehet sérült vagy jelszóval védett.')
+        if run.returncode & 0xffffffff in (0xc0000135, 0xc000007b, 0xc0000142):
+            raise RuntimeError('A Poppler DLL-fájljai hiányoznak vagy nem indíthatók. A teljes Windows Poppler-csomag Library/bin tartalmát másold a pdftotext.exe mellé, majd indítsd újra a programot.')
+        raise ValueError('A PDF nem olvasható; lehet sérült vagy jelszóval védett. Ha minden PDF-nél jelentkezik, ellenőrizd, hogy a teljes Poppler-csomag DLL-jei a pdftotext.exe mellett vannak-e.')
     if len(run.stdout) > 6 * 1024 * 1024:
         raise ValueError('Túl nagy kinyert szöveg. Kisebb dokumentum szükséges.')
     return parse_text(run.stdout.decode('utf-8', errors='replace'), filename)

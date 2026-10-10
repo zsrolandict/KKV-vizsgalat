@@ -143,3 +143,14 @@ tests/            Számítási és API-tesztek
 A felület buildlépés nélkül fut. Több szerverpéldányos, nagyobb szervezeti telepítéshez PostgreSQL és közös dokumentumtároló bevezetése külön üzemeltetési bővítés.
 
 Helyi biztonsági mentés, visszaállítás és ZIP-ből frissítés: [Windows-karbantartás](docs/windows-karbantartas.md).
+
+
+## Döntésmentés és állásfoglalások – 2026. október 10.
+
+A Tao-döntésnél a **Mentés és ellenőrzöttnek jelölés** lezárja a forrással és indokkal igazolt kapcsolt / nem kapcsolt minősítést. A **Mentés tervezetként** nyitva hagyja. A **Mentés nyitott kérdésként** a „nem dönthető el” eredményt és a következő lépést rögzíti; ez a tétel továbbra is ellenőrizendő. A negatív minősítésnél a releváns jogalapok ellenőrzését külön meg kell erősíteni. A legördülők választásai mellett részletes magyarázat jelenik meg.
+
+Az **Ügyadatok** alatt külön piaci értékelés, feltételezések, a kiadó szervezet és az aláíró is rögzíthető. Az **Ellenőrzés** nézetből bírósági döntés / jogforrás adható hozzá hivatalos linkkel, releváns idézettel és ügyre szabott indokkal. Az ellenőrizetlen hivatkozás kutatási tétel marad; a program nem alkalmazza automatikusan.
+
+A Word a megküldött minta Garamond tipográfiáját, egyszerű címsorait és visszafogott táblázatait követi. A Tao-vélemény is részletes tényállást, befolyásszámítást, jogalapot, forrást és következtetést tartalmaz, külön feltételezés-, piacvizsgálati és jogforrásrésszel. [Megnyitható fiktív Word/PDF-minták](docs/peldak/README.md).
+
+A **PDF feltételek** gomb külön mutatja a LibreOffice-alapú PDF-exportot és a Poppler-alapú PDF-beolvasást. Exporthoz telepítsd a [LibreOffice-t](https://www.libreoffice.org/download/download-libreoffice/), majd indítsd újra az alkalmazást. A szokásos Windows telepítési helyet automatikusan felismeri; a konverzió rövid helyi ideiglenes útvonalakon fut, saját LibreOffice-profillal. DLL-hibánál a PDF-beolvasó a Poppler teljes csomagjának helyreállítását kéri.

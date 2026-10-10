@@ -124,100 +124,95 @@ def xlsx_report(data, calc, meta):
 
 
 def word_report(data, calc, meta):
-    doc = Document()
-    section = doc.sections[0]
-    section.page_width, section.page_height = Cm(21), Cm(29.7)
-    section.top_margin = section.bottom_margin = Cm(2)
-    section.left_margin = section.right_margin = Cm(2)
-    section.header.paragraphs[0].text = 'TAO / SZAKÉRTŐI VIZSGÁLAT · ' + meta['label']
-    section.footer.paragraphs[0].text = f'{meta["id"]} · {meta["version"]}. verzió · {calc["rule_version"]}'
-    normal = doc.styles['Normal']
-    normal.font.name = 'Calibri'
-    normal.font.size = Pt(10.5)
-    normal.paragraph_format.space_after = Pt(7)
-    normal.paragraph_format.line_spacing = 1.15
-    for heading in ('Heading 1', 'Heading 2'):
-        doc.styles[heading].font.color.rgb = RGBColor.from_string('1C3658')
-    doc.add_heading('Tao szerinti kapcsoltsági vizsgálat', 0)
-    doc.add_paragraph(data.title, style='Subtitle')
-    doc.add_paragraph(meta['label']).runs[0].bold = True
-    if not meta['approved']:
-        doc.add_paragraph('TERVEZET – szakértői jóváhagyás nélkül végleges állásfoglalásként nem használható.')
-    elif not calc['complete']:
-        doc.add_paragraph('RÉSZLEGES ÁLLÁSFOGLALÁS – a nem eldöntött cégpárok nem minősülnek nem kapcsoltnak.').runs[0].bold = True
-    doc.add_paragraph(f'Megbízó: {data.client or "nincs megadva"}\nVizsgálati nap: {data.as_of}\nCél: {data.purpose}')
-    doc.add_heading('1. Vezetői megállapítások', 1)
-    doc.add_paragraph(f'A {data.as_of} napjára elvégzett vizsgálat {len(data.companies)} vállalkozás '
-                      f'{calc["total_pairs"]} cégpárjára terjed ki. A rögzített döntések alapján '
-                      f'{calc["counts"]["related"]} pár kapcsolt, {calc["counts"]["not_related"]} pár nem kapcsolt; '
-                      f'{calc["counts"]["undetermined"]} pár minősítése még nem dönthető el.')
-    doc.add_heading('2. Vizsgálati keret', 1)
-    doc.add_paragraph(data.scope or 'A felsorolt vállalkozások egymás közötti kapcsoltsági vizsgálata.')
-    doc.add_paragraph('A szavazati jelzések adat-előkészítési segítséget adnak. A jogi eredmények a rögzített szakértői döntésekből származnak; nem automatikus törvényi gráfminősítések.')
-    doc.add_paragraph(f'Jogi időállapot: {data.law_date or "ellenőrizendő"}\nForrás: {data.law_source or "nincs rögzítve"}')
-    doc.add_paragraph('Történeti alkalmazhatóság: '+(data.law_applicability or 'külön indok nincs rögzítve'))
-    if data.assumptions:
-        doc.add_paragraph('Feltételezések: ' + data.assumptions)
-    doc.add_heading('3. Eredmények áttekintése', 1)
-    table = doc.add_table(rows=1, cols=3)
-    table.style = 'Light Shading Accent 1'
-    for cell, label in zip(table.rows[0].cells, ('Cég A', 'Cég B', 'Jogi eredmény')):
-        cell.text = label
+    from .reports import configure, add_table, summary_box, new_section
+    from .opinion_support import market_paragraphs, assumptions, add_authorities, signoff
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    doc=Document();configure(doc,data,calc,meta,tao=True)
+    p=doc.add_heading('állásfoglalás',0);p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    p=doc.add_paragraph('– Tao. törvény szerinti kapcsoltsági vizsgálat –',style='Subtitle');p.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(data.title,style='Subtitle')
+    doc.add_paragraph(f'Vizsgálati nap: {data.as_of} · {meta["version"]}. ügyverzió',style='Caption')
+    conclusion=(f'A {data.as_of} napjára elvégzett vizsgálat {len(data.companies)} vállalkozás {calc["total_pairs"]} cégpárjára terjed ki. '
+        f'A rögzített, megerősített döntések alapján {calc["counts"]["related"]} pár kapcsolt, '
+        f'{calc["counts"]["not_related"]} pár nem kapcsolt; {calc["counts"]["undetermined"]} pár minősítése még nem dönthető el.')
+    summary_box(doc,meta['label'],conclusion,not meta['approved'])
+    if not meta['approved']:doc.add_paragraph('TERVEZET – szakértői jóváhagyás nélkül végleges állásfoglalásként nem használható.',style='Caption')
+    elif not calc['complete']:doc.add_paragraph('RÉSZLEGES ÁLLÁSFOGLALÁS – a nem eldöntött cégpárok nem minősülnek nem kapcsoltnak.',style='Caption')
+    doc.add_heading('1. A megbízott feladata és a vizsgálat kerete',1)
+    doc.add_paragraph(f'A megbízás tárgya a felsorolt vállalkozások közötti kapcsoltság értékelése a társasági adóról és az osztalékadóról '
+        f'szóló 1996. évi LXXXI. törvény (Tao.) 4. § 23. pontjának a rögzített időállapotban alkalmazandó rendelkezései alapján. '
+        f'Megbízó: {data.client or "nincs külön megadva"}. A vizsgálat célja: {data.purpose}.')
+    doc.add_paragraph('Vállalt vizsgálati kör: '+(data.scope or 'A vizsgálati kör és korlátai még nem kerültek külön meghatározásra.'))
+    doc.add_paragraph(f'Jogi időállapot: {data.law_date or "ellenőrizendő"}. Forrás: {data.law_source or "nincs rögzítve"}. '
+                      f'Történeti alkalmazhatóság: {data.law_applicability or "külön indok nincs rögzítve"}.')
+    doc.add_heading('2. Vezetői megállapítások és alkalmazott módszer',1)
+    doc.add_paragraph(conclusion)
+    doc.add_paragraph('A vizsgálatban külön értékeljük a dokumentált tulajdoni és szavazati jogokat, a közvetett befolyási útvonalakat, '
+        'az igazolt hozzátartozói összeszámítást, a meghatározó irányítási jogokat és az ügyvezetési tényeket. '
+        'Tao-telephely vagy bizalmi vagyonkezelés esetén a hozzájuk tartozó külön tényállás és forrás is szükséges. '
+        'A számított jelzést a megerősített szakértői jogi döntéstől elkülönítjük; a hiányzó adatot nem értelmezzük negatív minősítésként.')
+    add_table(doc,['Cég A','Cég B','Jogi eredmény'],[(r['first_name'],r['second_name'],r['label']) for r in calc['rows']],[6,6,5.5])
+    doc.add_heading('3. Cégpáronkénti tényállás, jogi értékelés és következtetés',1)
+    names={a.id:a.name for a in [*data.companies,*data.persons]}
     for row in calc['rows']:
-        for cell, value in zip(table.add_row().cells, (row['first_name'], row['second_name'], row['label'])):
-            cell.text = value
-    doc.add_heading('4. Cégpáronkénti indokolás', 1)
-    for row in calc['rows']:
-        doc.add_heading(row['first_name'] + ' – ' + row['second_name'], 2)
-        doc.add_paragraph(f'{row["label"]} · {row["stage_label"]}')
-        if row['basis']:
-            doc.add_paragraph('Jogalap: ' + row['basis'])
-        doc.add_paragraph(row['reason'])
-        if row['evidence']:
-            doc.add_paragraph('Forrás: ' + evidence_text(row['evidence']))
-        actor_names = {x.id: x.name for x in [*data.companies, *data.persons]}
-        for value in row.get('influence_calculations', []):
-            doc.add_paragraph(f"Befolyásszámítás: {value.get('owner_name') or actor_names[value['owner']]} → {actor_names[value['company']]}: {value['value']} · {value['basis']} · Tények: {', '.join(value['fact_ids'])}")
-        for fact in row.get('family_facts', []):
-            doc.add_paragraph(f"Igazolt rokonság: {actor_names[fact['first']]} – {actor_names[fact['second']]} · {FAMILY_LABELS[fact['relationship']]} · {evidence_text(fact['evidence'])}")
-        for route in row.get('control_calculations', []):
-            doc.add_paragraph('Meghatározó befolyás útvonala: ' + ' → '.join(actor_names[n] for n in route['route']) + ' · ' + route['basis'])
-        for fact in row.get('control_facts', []):
-            doc.add_paragraph(f"Irányítási tény: {actor_names[fact['owner']]} → {actor_names[fact['company']]} · {CONTROL_LABELS[fact['kind']]} · Tagi jogállás: {MEMBERSHIP_LABELS[fact['membership']]} · Feltétel: {ANSWER_LABELS[fact['condition']]}")
-            if fact['kind'] == 'voting_agreement':
-                vote = '>50%' if fact['aligned_bound'] == 'over_half' else str(fact['aligned_votes']) + '%' if fact['aligned_votes'] is not None else 'Tisztázandó'
-                doc.add_paragraph('Megállapodás szerinti együttes szavazat: ' + vote)
-            doc.add_paragraph(fact['reason'] + ' · ' + evidence_text(fact['evidence']))
-        for fact in row.get('management_facts', []):
-            doc.add_paragraph('Ügyvezetési tény: ' + ', '.join(actor_names[m] for m in fact['managers']) + f" · Egyezőség: {ANSWER_LABELS[fact['common_management']]} · Üzleti döntő befolyás: {ANSWER_LABELS[fact['business_control']]} · Pénzügyi döntő befolyás: {ANSWER_LABELS[fact['financial_control']]}")
-            doc.add_paragraph(fact['reason'] + ' · ' + evidence_text(fact['evidence']))
-        for f in row.get('establishment_facts', []):
-            doc.add_paragraph('Telephelyi tény: ' + actor_names[f['principal']] + ' → ' + actor_names[f['establishment']] + ' · ' + PE_LABELS[f['kind']] + ' · ' + f['reason'] + ' · ' + evidence_text(f['evidence']))
-        for f in row.get('trust_facts', []):
-            doc.add_paragraph('BVK: ' + f['name'] + ' · ' + f['reason'] + ' · ' + evidence_text(f['evidence']))
-        for label, values in (('Kapcsoltsági jelzés', row['signals']), ('Feltételezés', row['assumptions']), ('Tisztázandó', row['missing'])):
-            for value in values:
-                doc.add_paragraph(label + ': ' + value)
-    doc.add_heading('5. Nyitott kérdések és következő lépések', 1)
-    pending = [r for r in calc['rows'] if r['result'] == 'undetermined' or not r['confirmed']]
-    for row in pending:
-        doc.add_paragraph(row['first_name']+' – '+row['second_name'], style='Heading 2')
-        doc.add_paragraph('Tisztázandó: '+(' '.join(row['missing']) or 'Indokolt, forrással igazolt minősítés és megerősítés szükséges.'))
-    if not pending: doc.add_paragraph('Minden cégpárra megerősített minősítés áll rendelkezésre.')
-    doc.add_heading('6. Cégháló és rögzített kapcsolatok', 1)
-    doc.add_paragraph('A mentett elrendezésű ábra a vizsgálati napon fennálló rögzített tényeket mutatja. '
-                      'A * jel a tulajdon és szavazat azonosságának feltételezését jelöli. '
-                      'A végleges jogi minősítéseket a cégpáronkénti indokolás tartalmazza.')
-    doc.add_picture(BytesIO(graph_image(data)), width=Cm(17))
-    doc.add_heading('7. Jóváhagyás és visszakövethetőség', 1)
+        doc.add_heading(row['first_name']+' – '+row['second_name'],2)
+        p=doc.add_paragraph();p.add_run('Megállapítás: ').bold=True;p.add_run(row['label']+'. '+row['stage_label']+'.')
+        if row['result']=='undetermined':doc.add_paragraph('A cégpár végleges kapcsoltsági minősítése még nem igazolható. '
+            'Az alábbi tények és jelzések további szakértői értékelést vagy bizonyítást igényelnek.')
+        doc.add_paragraph('Szakértői indokolás: '+row['reason'])
+        doc.add_paragraph('Alkalmazott jogalap: '+(row['basis'] or 'A konkrét rendelkezés még nincs rögzítve.'))
+        if row['evidence'].get('source'):doc.add_paragraph('Igazoló forrás: '+evidence_text(row['evidence']))
+        for signal in row['signals']:doc.add_paragraph('A rögzített tényekből származó jelzés: '+signal)
+        for v in row.get('influence_calculations',[]):
+            doc.add_paragraph(f'Befolyásszámítás: {v.get("owner_name") or names[v["owner"]]} → {names[v["company"]]}: {v["value"]}. '
+                f'Az alkalmazott számítás jogalapja: {v["basis"]}. Felhasznált szavazati tények: {", ".join(v["fact_ids"])}.')
+        for f in row.get('family_facts',[]):doc.add_paragraph('Igazolt rokonság: '+names[f['first']]+' – '+names[f['second']]+': '+FAMILY_LABELS[f['relationship']]+'. Forrás: '+evidence_text(f['evidence']))
+        for route in row.get('control_calculations',[]):doc.add_paragraph('Meghatározó befolyás útvonala: '+' → '.join(names[n] for n in route['route'])+'. Jogalap: '+route['basis']+'.')
+        for f in row.get('control_facts',[]):
+            doc.add_paragraph('Irányítási tény: '+names[f['owner']]+' → '+names[f['company']]+'. '+CONTROL_LABELS[f['kind']]+'. '
+                'Tagi jogállás: '+MEMBERSHIP_LABELS[f['membership']]+'. Feltétel fennállása: '+ANSWER_LABELS[f['condition']]+'. '+f['reason']+'. Forrás: '+evidence_text(f['evidence']))
+            if f['kind']=='voting_agreement':doc.add_paragraph('Megállapodás szerinti együttes szavazat: '+('>50%' if f['aligned_bound']=='over_half' else str(f['aligned_votes'])+'%' if f['aligned_votes'] is not None else 'tisztázandó')+'.')
+        for f in row.get('management_facts',[]):doc.add_paragraph('Ügyvezetési tény: '+', '.join(names[m] for m in f['managers'])+'. '
+            'Egyezőség: '+ANSWER_LABELS[f['common_management']]+', üzleti döntő befolyás: '+ANSWER_LABELS[f['business_control']]+', '
+            'pénzügyi döntő befolyás: '+ANSWER_LABELS[f['financial_control']]+'. '+f['reason']+'. Forrás: '+evidence_text(f['evidence']))
+        for f in row.get('establishment_facts',[]):doc.add_paragraph('Telephelyi tény: '+names[f['principal']]+' → '+names[f['establishment']]+'. '+PE_LABELS[f['kind']]+'. '+f['reason']+'. Forrás: '+evidence_text(f['evidence']))
+        for f in row.get('trust_facts',[]):doc.add_paragraph('Bizalmi vagyonkezelési tényállás: '+f['name']+'. '+f['reason']+'. Forrás: '+evidence_text(f['evidence']))
+        for label,values in [('Ügyre alkalmazott feltételezés',row['assumptions']),('Tisztázandó tény / következő lépés',row['missing'])]:
+            for v in values:doc.add_paragraph(label+': '+v)
+    doc.add_heading('4. Piaci összefüggések és a vizsgálatok elhatárolása',1)
+    for text in market_paragraphs(data,tao=True):doc.add_paragraph(text)
+    doc.add_heading('5. Feltételezések, korlátozások és nyitott kérdések',1)
+    for text in assumptions(data,tao=True):doc.add_paragraph(text,style='List Bullet')
+    pending=[r for r in calc['rows'] if r['result']=='undetermined' or not r['confirmed']]
+    for row in pending:doc.add_paragraph(row['first_name']+' – '+row['second_name']+': '+(' '.join(row['missing']) or 'Indokolt, forrással igazolt minősítés és megerősítés szükséges.'),style='List Bullet')
+    if not pending:doc.add_paragraph('Minden cégpárra megerősített minősítés áll rendelkezésre.')
+    doc.add_heading('6. Alkalmazott jogszabályok és bírósági döntések',1)
+    doc.add_paragraph('Tao.: 1996. évi LXXXI. törvény, a rögzített kapcsoltsági döntésekben megjelölt rendelkezések. '
+                      'A Ptk. szerinti szavazati és befolyási számítások joghelyei a cégpáronkénti indokolásban szerepelnek. '
+                      'Az alkalmazandó időállapotot és az ügyre való alkalmazhatóságot a szakértő ellenőrzi.')
+    add_authorities(doc,data)
+    concluding_start=len(doc.paragraphs)
+    doc.add_heading('7. Összefoglalás és szakértői jóváhagyás',1)
+    summary_box(doc,'Megállapítás',conclusion,not meta['approved'])
     if meta['approved']:
-        stamp = datetime.fromisoformat(meta['approved_at']).astimezone(ZoneInfo('Europe/Budapest')).strftime('%Y.%m.%d. %H:%M')
-        doc.add_paragraph(f'Jóváhagyó: {meta["approver"]}\nJóváhagyás: {stamp} (Europe/Budapest)')
-        if meta.get('note'):
-            doc.add_paragraph(meta['note'])
-    else:
-        doc.add_paragraph('Szakértői jóváhagyás még nem történt.')
-    doc.add_paragraph('A KKV-minősítés és a transzferár-kötelezettség külön vizsgálat. A rendszerbeli jóváhagyás nem elektronikus aláírás.')
-    stream = BytesIO()
-    doc.save(stream)
-    return stream.getvalue()
+        stamp=datetime.fromisoformat(meta['approved_at']).astimezone(ZoneInfo('Europe/Budapest')).strftime('%Y.%m.%d. %H:%M')
+        doc.add_paragraph(f'Jóváhagyó: {meta["approver"]}. Jóváhagyás: {stamp} (Europe/Budapest).')
+        if meta.get('note'):doc.add_paragraph('Jóváhagyási korlátok / megjegyzés: '+meta['note'])
+    else:doc.add_paragraph('Szakértői jóváhagyás még nem történt.')
+    doc.add_paragraph('A KKV-minősítés és az ügyletszintű transzferár-kötelezettség külön vizsgálat. '
+                      'A kapcsoltság megállapítása önmagában nem igazolja valamennyi nyilvántartási feltétel fennállását. '
+                      'A rendszerbeli jóváhagyás nem elektronikus aláírás.')
+    signoff(doc,data,meta)
+    for p in doc.paragraphs[concluding_start:-1]:p.paragraph_format.keep_with_next=True
+    for row in doc.tables[-1].rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:p.paragraph_format.keep_with_next=True
+    new_section(doc,landscape=True)
+    doc.add_heading('1. melléklet – cégháló és rögzített kapcsolatok',1)
+    doc.add_paragraph('A mentett elrendezésű ábra a vizsgálati napon fennálló rögzített tényeket mutatja. '
+        'A * jel a tulajdon és szavazat azonosságának feltételezését jelöli. A nyilak nem végleges jogi minősítések.',style='Caption')
+    png=graph_image(data)
+    from PIL import Image
+    with Image.open(BytesIO(png)) as image:ratio=image.width/image.height
+    doc.add_picture(BytesIO(png),width=Cm(min(25,12.5*ratio)))
+    output=BytesIO();doc.save(output);return output.getvalue()

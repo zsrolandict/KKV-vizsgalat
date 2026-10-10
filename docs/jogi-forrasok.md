@@ -25,3 +25,6 @@ A feltöltött Ptk. 8:2. § (2) a)–b) alapján a tagi/részvényesi jogállás
 A történeti forráslekérési kísérlet 2026.10.09-én a net.jogtar.hu és njt.hu címeken a környezet hálózati proxyjától 403-as elutasítást kapott. Ezért nem állítunk hitelesített 2024/2025-ös jogszabály-lefedettséget. A két modulban a szakértő rögzíti a jogi időállapotot és forrást; a vizsgálati napnál későbbi forrásnál a történeti alkalmazhatóság indoka is kötelező a jóváhagyáshoz. Az indok megléte nem helyettesíti a tényleges jogszabály-összevetést.
 
 A transzferár-modul a felhasználó kérésére későbbi, harmadik fejlesztés. A jelenlegi elfogadási kör kizárólag KKV és Tao.
+
+
+2026.10.10.: az állásfoglalásmintában szereplő C-110/13 (HaTeFo) és C-53/17 hivatkozás külön kutatási kiindulópontként rögzíthető. Az EUR-Lex eredeti forrásainak lekérése a környezet proxyjától 403-as elutasítást kapott; a C-53/17 tartalmát és a konkrét ügyre való relevanciáját nem minősítjük ellenőrzöttnek. A katalógus nem másol ítéleti következtetést az ügybe. Alkalmazott hivatkozáshoz a szakértő forrást, releváns bekezdéseket és ügyre vonatkozó indokolást rögzít, majd külön ellenőrzöttnek jelöli. A hivatkozás nem módosít automatikusan számítási jogalapot.

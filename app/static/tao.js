@@ -71,12 +71,14 @@
   }
 
   function dashboard() {
+    history.replaceState(null,'','/tao');
     state.current = null;
     shell(`<div class="heading"><div><h1>Tao-kapcsoltsági vizsgálatok</h1><p class="sub">Cégpárok, források és indokolt szakértői döntések.</p></div>${staff() ? `<div class="actions"><a class="button" href="/pdf-import?module=tao">OPTEN PDF-import</a>${button('Mintavizsgálat', 'demo')}${button('Új Tao-vizsgálat', 'new', 'primary', '', 'plus')}</div>` : ''}</div><nav class="services" aria-label="Szolgáltatásválasztó"><span class="active">Tao-kapcsoltság</span><a href="/">KKV-minősítés</a></nav>${state.cases.length ? `<div class="cards">${state.cases.map(c => `<button class="case-card" data-action="open" data-id="${esc(c.id)}"><strong>${esc(c.title)}</strong><span>${esc(c.client || 'Megbízó még nincs megadva')} · ${esc(c.as_of)}</span><span>${badge(statusLabel(c.status), c.status.startsWith('approved') ? 'approved' : 'amber')}</span></button>`).join('')}</div>` : `<section class="panel empty"><h2>Még nincs Tao-vizsgálat</h2><p>Hozz létre egy ügyet a vizsgált vállalkozásokkal.</p>${staff() ? button('Új Tao-vizsgálat', 'new', 'primary', '', 'plus') : ''}</section>`}`);
   }
 
   async function openCase(cid) {
     state.current = await api('/tao/cases/' + cid);
+    history.replaceState(null,'','/tao?case='+encodeURIComponent(cid));
     state.docs = await api(`/tao/cases/${cid}/documents`);
     if (staff()) state.audit = await api(`/tao/cases/${cid}/audit`);
     renderCase();
@@ -90,7 +92,7 @@
     }
     const calc = c.calculation;
     const body = {matrix: matrixView, data: dataView, documents: documentsView, graph: graphView, review: reviewView}[state.tab] || matrixView;
-    shell(`<div class="heading"><div><button class="subtle" data-action="dashboard">← Vissza az ügyekhez</button><h1>${esc(c.data.title)}</h1><p class="sub">${esc(c.data.client || 'Tao szerinti vizsgálat')} · ${esc(c.data.as_of)} · ${c.version}. verzió ${badge(statusLabel(c.status), c.status.startsWith('approved') ? 'approved' : 'amber')}</p></div><div class="actions">${button('Ügyadatok', 'settings', '', '', 'edit')}${button('XLSX', 'export', '', 'data-kind="xlsx"', 'download')}${button('Word', 'export', '', 'data-kind="docx"', 'download')}${button('PDF', 'export', 'primary', 'data-kind="pdf"', 'download')}</div></div><nav class="services" aria-label="Szolgáltatásválasztó"><span class="active">Tao-kapcsoltság</span><a href="/">KKV-minősítés</a></nav><nav class="tabs" aria-label="Tao-vizsgálat nézetei">${Object.entries(tabs).map(([key, name]) => button(name + (key === 'review' ? ` (${pendingChecks().length})` : ''), 'tab', state.tab === key ? 'active' : '', `data-tab="${key}"`)).join('')}</nav>${c.status === 'draft' ? `<div class="notice ${calc.law_profile_present ? '' : 'amber'}"><strong>Előzetes eredmény</strong><p class="small">A jogi minősítés indokolt szakértői döntésből készül. ${!calc.law_profile_present ? 'Az alkalmazandó jogi időállapot és forrás még ellenőrizendő.' : 'A véglegesítéshez külön szakértői jóváhagyás szükséges.'}</p></div>` : ''}${state.feedback ? `<div class="notice" id="save-feedback" role="status">${esc(state.feedback)}</div>` : ""}<div id="case-content">${body()}</div>`);
+    shell(`<div class="heading"><div><button class="subtle" data-action="dashboard">← Vissza az ügyekhez</button><h1>${esc(c.data.title)}</h1><p class="sub">${esc(c.data.client || 'Tao szerinti vizsgálat')} · ${esc(c.data.as_of)} · ${c.version}. verzió ${badge(statusLabel(c.status), c.status.startsWith('approved') ? 'approved' : 'amber')}</p></div><div class="actions">${button('Ügyadatok', 'settings', '', '', 'edit')}${button('PDF feltételek','pdf-tools')}${button('XLSX', 'export', '', 'data-kind="xlsx"', 'download')}${button('Word', 'export', '', 'data-kind="docx"', 'download')}${button('PDF', 'export', 'primary', 'data-kind="pdf"', 'download')}</div></div><nav class="services" aria-label="Szolgáltatásválasztó"><span class="active">Tao-kapcsoltság</span><a href="/">KKV-minősítés</a></nav><nav class="tabs" aria-label="Tao-vizsgálat nézetei">${Object.entries(tabs).map(([key, name]) => button(name + (key === 'review' ? ` (${pendingChecks().length})` : ''), 'tab', state.tab === key ? 'active' : '', `data-tab="${key}"`)).join('')}</nav>${c.status === 'draft' ? `<div class="notice ${calc.law_profile_present ? '' : 'amber'}"><strong>Előzetes eredmény</strong><p class="small">A jogi minősítés indokolt szakértői döntésből készül. ${!calc.law_profile_present ? 'Az alkalmazandó jogi időállapot és forrás még ellenőrizendő.' : 'A véglegesítéshez külön szakértői jóváhagyás szükséges.'}</p></div>` : ''}${state.feedback ? `<div class="notice" id="save-feedback" role="status">${esc(state.feedback)}</div>` : ""}<div id="case-content">${body()}</div>`);
     approvalProgress();
   }
 
@@ -238,7 +240,7 @@
   function reviewView() {
     const c = state.current;
     const calc = c.calculation;
-    return `${checkCards()}<section class="panel"><div class="panel-title"><h2>Szakértői ellenőrzés</h2>${badge(statusLabel(c.status), c.status.startsWith('approved') ? 'approved' : 'amber')}</div><p>${calc.counts.related} kapcsolt, ${calc.counts.not_related} nem kapcsolt és <strong>${calc.counts.undetermined} nem eldöntött cégpár</strong>.</p>${!calc.complete ? '<div class="notice"><strong>Részleges állásfoglalás is átadható</strong><p>A nem eldöntött párok és a vizsgálat korlátai az exportban is megmaradnak.</p></div>' : ''}<p>Jogi időállapot: ${esc(c.data.law_date || 'nincs rögzítve')}<br>Forrás: ${esc(c.data.law_source || 'nincs rögzítve')}</p>${button('Vizsgálati keret és jogi forrás', 'settings', 'accent')}${reviewer() && c.status === 'draft' ? `<form id="approval-form" class="forms"><label class="check"><input type="checkbox" name="relationships" required><span>A kapcsolati tényeket, forrásokat és szakértői döntéseket ellenőriztem.</span></label><label class="check"><input type="checkbox" name="rules" required><span>Az alkalmazandó jogi időállapotot és a vizsgálat céljára vonatkozó szabályokat ellenőriztem.</span></label><label class="check"><input type="checkbox" name="scope" required><span>A vállalt vizsgálati kört és a feltételezéseket ellenőriztem.</span></label><label class="check"><input type="checkbox" name="partial" ${!calc.complete ? 'checked' : ''}><span>Kifejezetten részleges állásfoglalást hagyok jóvá.</span></label>${area('Korlátok / jóváhagyási megjegyzés', 'note', '', !calc.complete ? 'required' : '')}<p id="approval-progress" class="notice" role="status"></p><p id="approval-error" class="error" hidden></p><button type="submit" class="primary">${icon('shield')} Szakértői jóváhagyás</button></form>` : !reviewer() ? '<p class="muted">A jóváhagyást jóváhagyó szakértő vagy adminisztrátor végezheti el.</p>' : ''}</section><section class="panel"><h2>Verziók és napló</h2><div class="actions">${button('Mentett verziók', 'versions')}</div><div class="audit">${state.audit.map(v => `<div class="row"><div><strong>${esc(v.actor)}</strong><p>${esc(v.details || v.action)}</p><small>${esc(v.created)} · ${esc(v.action)}</small></div></div>`).join('')}</div></section>`;
+    return `${checkCards()}<section class="panel"><div class="panel-title"><h2>Szakértői ellenőrzés</h2>${badge(statusLabel(c.status), c.status.startsWith('approved') ? 'approved' : 'amber')}</div><p>${calc.counts.related} kapcsolt, ${calc.counts.not_related} nem kapcsolt és <strong>${calc.counts.undetermined} nem eldöntött cégpár</strong>.</p>${!calc.complete ? '<div class="notice"><strong>Részleges állásfoglalás is átadható</strong><p>A nem eldöntött párok és a vizsgálat korlátai az exportban is megmaradnak.</p></div>' : ''}<p>Jogi időállapot: ${esc(c.data.law_date || 'nincs rögzítve')}<br>Forrás: ${esc(c.data.law_source || 'nincs rögzítve')}</p>${button('Vizsgálati keret és jogi forrás', 'settings', 'accent')}${reviewer() && c.status === 'draft' ? `<form id="approval-form" class="forms"><label class="check"><input type="checkbox" name="relationships" required><span>A kapcsolati tényeket, forrásokat és szakértői döntéseket ellenőriztem.</span></label><label class="check"><input type="checkbox" name="rules" required><span>Az alkalmazandó jogi időállapotot és a vizsgálat céljára vonatkozó szabályokat ellenőriztem.</span></label><label class="check"><input type="checkbox" name="scope" required><span>A vállalt vizsgálati kört és a feltételezéseket ellenőriztem.</span></label><label class="check"><input type="checkbox" name="partial" ${!calc.complete ? 'checked' : ''}><span>Kifejezetten részleges állásfoglalást hagyok jóvá.</span></label>${area('Korlátok / jóváhagyási megjegyzés', 'note', '', !calc.complete ? 'required' : '')}<p id="approval-progress" class="notice" role="status"></p><p id="approval-error" class="error" hidden></p><button type="submit" class="primary">${icon('shield')} Szakértői jóváhagyás</button></form>` : !reviewer() ? '<p class="muted">A jóváhagyást jóváhagyó szakértő vagy adminisztrátor végezheti el.</p>' : ''}</section>${Opinion.section(c.data)}<section class="panel"><h2>Verziók és napló</h2><div class="actions">${button('Mentett verziók', 'versions')}</div><div class="audit">${state.audit.map(v => `<div class="row"><div><strong>${esc(v.actor)}</strong><p>${esc(v.details || v.action)}</p><small>${esc(v.created)} · ${esc(v.action)}</small></div></div>`).join('')}</div></section>`;
   }
 
   function approvalProgress() {
@@ -272,7 +274,7 @@
     showEditor.submit = onSubmit;
     showEditor.remove = remove;
     editor.showModal();
-    explainEdit(false);
+    explainEdit(false);updateSelectHelp();
   }
   const formObject = form => Object.fromEntries(new FormData(form));
   const nullable = value => value || null;
@@ -291,6 +293,9 @@
     const after=pendingChecks().length;
     const changes=state.current.calculation.rows.filter(r=>{const old=previous.find(v=>pairKey(v.first,v.second)===pairKey(r.first,r.second));return old && (old.result!==r.result || JSON.stringify(old.signals)!==JSON.stringify(r.signals));});
     state.feedback=`Mentve és újraszámítva. ${after} ellenőrizendő maradt.`+(before>after ? ` ${before-after} kérdés rendezve.` : '')+(changes.length ? ' Változott: '+changes.map(r=>`${r.first_name} ↔ ${r.second_name}: ${r.label}; ${r.signals.join(' ')}`).join(' • ') : ' A cégpárok minősítése és kapcsoltsági jelzése nem változott.');
+    const selected=state.current.calculation.rows.find(r=>pairKey(r.first,r.second)===state.selected);
+    if(editor.querySelector('form')?.dataset.decision==='true' && selected && (selected.result==='undetermined' || !selected.confirmed))
+      state.feedback+=' Ez a cégpár nyitott maradt: '+(!selected.confirmed ? 'tervezetként mentetted; a lezáráshoz válassz minősítést és használd a Mentés és ellenőrzöttnek jelölés gombot.' : 'a „nem dönthető el” minősítés további tisztázást igényel.');
     state.graphDirty=false; renderCase(); toast(state.feedback);
     } finally {state.busy=wasBusy;}
   }
@@ -311,13 +316,21 @@
     const d = state.current.data;
     state.users = await api('/users');
     const clients = [['', 'Nincs ügyfélfiók'], ...state.users.filter(v => v.role === 'client').map(v => [v.id, v.name])];
-    showEditor('Vizsgálati keret', `${field('Vizsgálat neve', 'title', d.title, 'text', 'required')}${field('Megbízó', 'client', d.client)}${field('Vizsgálati nap', 'as_of', d.as_of, 'date', 'required')}${field('Jogi időállapot napja', 'law_date', d.law_date, 'date')}${area('Ellenőrzött jogi forrás / időállapot hivatkozása', 'law_source', d.law_source)}${area('Történeti alkalmazhatóság indoka eltérő időállapotnál','law_applicability',d.law_applicability || '')}${area('Vizsgálati cél', 'purpose', d.purpose)}${area('Vállalt vizsgálati kör és korlátai', 'scope', d.scope)}${area('Feltételezések', 'assumptions', d.assumptions)}${select('Hozzárendelt ügyfélfiók', 'client_user_id', state.current.client_user_id || '', clients)}`, async p => {
+    showEditor('Vizsgálati keret', `${field('Vizsgálat neve', 'title', d.title, 'text', 'required')}${field('Megbízó', 'client', d.client)}${field('Vizsgálati nap', 'as_of', d.as_of, 'date', 'required')}${field('Jogi időállapot napja', 'law_date', d.law_date, 'date')}${area('Ellenőrzött jogi forrás / időállapot hivatkozása', 'law_source', d.law_source)}${area('Történeti alkalmazhatóság indoka eltérő időállapotnál','law_applicability',d.law_applicability || '')}${area('Vizsgálati cél', 'purpose', d.purpose)}${area('Vállalt vizsgálati kör és korlátai', 'scope', d.scope)}${area('Feltételezések', 'assumptions', d.assumptions)}<p class="field full small muted">Külön írd le, mely megbízói adatokat és nyilatkozatokat fogadod el, mit nem vizsgáltál, és milyen feltételezés mellett érvényes a megállapítás. A program nem feltételezi automatikusan más irányítási szerződés hiányát.</p>${Opinion.settings(d)}${select('Hozzárendelt ügyfélfiók', 'client_user_id', state.current.client_user_id || '', clients)}`, async p => {
       const data = copy();
-      for (const key of ['title', 'client', 'as_of', 'law_source', 'law_applicability', 'purpose', 'scope', 'assumptions']) data[key] = p[key];
+      for (const key of ['title', 'client', 'as_of', 'law_source', 'law_applicability', 'purpose', 'scope', 'assumptions', 'market_analysis','report_issuer','report_signatory','report_place']) data[key] = p[key];
       data.law_date = nullable(p.law_date);
       const assignment=state.current.client_user_id; state.current.client_user_id=nullable(p.client_user_id);
       try {await save(data);} catch(error) {state.current.client_user_id=assignment;throw error;}
     });
+  }
+
+  function legalEditor(id,candidate) {
+    const r=state.current.data.legal_references?.find(r=>r.id===id) || Opinion.candidates[candidate] || {};
+    showEditor('Bírósági döntés / jogforrás',Opinion.fields(r),async p=>{
+      const next=copy();next.legal_references ||= [];
+      upsert(next.legal_references,{...p,id:id || crypto.randomUUID(),checked:!!p.checked});await save(next);
+    },id ? async()=>{const next=copy();next.legal_references=next.legal_references.filter(r=>r.id!==id);await save(next);} : null);
   }
 
   function companyEditor(id) {
@@ -423,19 +436,57 @@
     votes.disabled = !exact || editor.querySelector('[name=vote_bound]').value === 'over_half';
   }
 
+  function decisionRequirements() {
+    const form=editor.querySelector('form');if(form?.dataset.decision!=='true')return;
+    const result=form.elements.result.value, resolved=['related','not_related'].includes(result);
+    form.elements.result.required=true;form.elements.reason.required=true;
+    for(const name of ['basis','source'])form.elements[name].required=resolved;
+    form.elements.missing.required=result==='undetermined';
+    form.elements.relevant_grounds_reviewed.required=result==='not_related';
+    form.elements.relevant_grounds_reviewed.closest('label').hidden=result!=='not_related';
+    form.elements.confirmed.closest('label').hidden=true;
+    form.elements.stage.closest('.field').hidden=resolved;
+    form.querySelector('[data-save-mode=reviewed]').textContent=resolved ? 'Mentés és ellenőrzöttnek jelölés' : result==='undetermined' ? 'Mentés nyitott kérdésként' : 'Mentés és ellenőrzöttnek jelölés';
+    let info=form.querySelector('#decision-save-help');
+    if(!info){info=document.createElement('p');info.id='decision-save-help';info.className='notice';form.querySelector('.dialog-body').append(info);}
+    info.textContent=resolved ? 'A Mentés és ellenőrzöttnek jelölés megerősíti a minősítést, az indokot és a forrást. Sikeres mentés után ez a cégpár eltűnik az ellenőrizendők közül. A tervezet mentése nyitva hagyja.' : 'Válassz kapcsolt vagy nem kapcsolt minősítést a lezáráshoz. Ha még nem dönthető el, indokold a bizonytalanságot és add meg a következő lépést: a kérdés mentés után is nyitott marad.';
+  }
+  const selectHelp={
+    legal_ground:{unspecified:'A jogalap csoportját még nem határoztad meg. A minősítés konkrét jogalapját ettől függetlenül a következő mezőben kell megadni.',abc:'Tulajdonosi / szavazati / meghatározó befolyási kapcsolat vagy közös irányító. A Tao. 4. § 23. a)–c) csoportjába tartozó megerősített kapcsoltságot a telephelyi vizsgálat külön szabályai felhasználhatják. A konkrét alpontot és az indokot is rögzítsd.',management:'Ügyvezetési egyezőség révén gyakorolt döntő befolyás az üzleti és pénzügyi politikára. A közös ügyvezető neve önmagában nem elég; a tényleges döntési rendet és a Tao. 4. § 23. f) szerinti feltételeket igazold. Nem soroljuk automatikusan az a)–c) szerinti telephelyi továbbvezetéshez.',pe:'Adózó / külföldi vállalkozó és Tao-telephely kapcsolata: a d)–e) szerinti feltételek és adójogi jogállás külön igazolása szükséges. A telephely nem egyszerűen egy cég postacíme.',other:'A másik jogalapot pontos rendelkezéssel és ügyre szabott indokkal add meg. Ebből a csoportból nem készül automatikus a)–c) szerinti telephelyi továbbvezetés.'},
+    result:{'':'Még nincs választás. A program számított jelzést ad, a végleges jogi minősítést te rögzíted.',related:'Kapcsoltságot állapítasz meg: pontos jogalap, szakértői indok és igazoló forrás kell. Ellenőrzött mentés után a cégpár lezárul.',not_related:'A vállalt vizsgálati körben nem állapítasz meg kapcsoltságot. Minden releváns jogalap ellenőrzését külön erősítsd meg; a hiányzó adat nem bizonyít függetlenséget.',undetermined:'A rendelkezésre álló adatokból még nem hozható végleges döntés. Írd le, miért, milyen adatot / nyilatkozatot kérsz, és mi a következő lépés. Ez a tétel az ellenőrizendők között marad.'},
+    stage:{unreviewed:'A forrásiratok tartalmát és a releváns jogalapokat még meg kell vizsgálni.',awaiting_declaration:'Konkrét tényállási nyilatkozat szükséges. A hiányzó tényt és a nyilatkozó személyt a következő lépésnél nevezd meg.',missing_data:'Hiányzik a döntéshez szükséges adat vagy igazolás. Ne helyettesítsd feltételezett negatív minősítéssel.',management_review:'A vezetők azonossága ismert, de a tényleges üzleti és pénzügyi döntő befolyás még tisztázandó.'},
+    vote_mode:{ownership_default:'A tőkerészesedés arányát a program szavazati aránynak feltételezi; ezt az állásfoglalás is feltünteti. Eltérő szavazati jog esetén válaszd a dokumentált adatot.',explicit:'Okirattal igazolt szavazati arány vagy dokumentált 50% feletti jelzés.',expert:'Indokolt szakértői szavazati adat, amely az adott időpontban elsőbbséget kaphat az alapadatokhoz képest. Az eltérést forrással és indokkal igazold.',unknown:'A szavazati arány nem ismert; ebből nem igazolható többségi befolyás.'},
+    capacity:{own:'A részesedés saját vagyon része.',trustee:'A jogosult bizalmi vagyonkezelőként szerepel. A szavazatok hozzárendelését külön kell igazolni; nem tekintjük automatikusan saját vagyoni befolyásnak.',unknown:'A részesedés jogállása még tisztázandó; kérj okiratot vagy nyilatkozatot.'},
+    membership:{unknown:'A meghatározó befolyási joghoz szükséges tagi jogállás még nem igazolt.',member:'A jogosult igazolt tag / részvényes; a választott irányítási jog feltételeit ettől még külön vizsgáld.',not_member:'A tagi jogálláshoz kötött irányítási feltétel ezen a jogcímen nem igazolt. Más kapcsoltsági jogalap továbbra is fennállhat.'},
+    vote_bound:{exact:'A dokumentált pontos szavazati százalékot add meg. Az 50% nem többség.',over_half:'A forrás csak az 50% feletti szavazatot igazolja. Nem találunk ki pontos százalékot; a számítás ezt dokumentált többségi jelzésként kezeli.'},
+    entity_type:{company:'Vállalkozás önálló kapcsoltsági vizsgálattal.',managed_assets:'Elkülönült kezelt vagyon; a BVK-jogok és a szavazati hozzárendelés külön ellenőrzése szükséges.',permanent_establishment:'Tao. szerinti telephely adójogi jogállással; a fővállalkozáshoz fűződő viszonyt külön rögzítsd.'},
+    kind:{appointments:'A vezető tisztségviselők / felügyelőbizottsági tagok többségének megválasztási vagy visszahívási jogát kell igazolni.',voting_agreement:'Más tagokkal kötött megállapodás miatt együtt gyakorolt többségi szavazat. A saját szavazatot csak egyszer számold.'}
+  };
+  function updateSelectHelp() {
+    editor.querySelectorAll('select').forEach(el=>{
+      const text=selectHelp[el.name]?.[el.value];if(!text)return;
+      let help=el.parentElement.querySelector('[data-select-help]');if(!help){help=document.createElement('small');help.dataset.selectHelp=el.name;help.id='help-'+el.name;el.parentElement.append(help);el.setAttribute('aria-describedby',help.id);}
+      help.textContent=text;
+    });
+  }
+
   function decisionEditor() {
     const row = state.current.calculation.rows.find(r => pairKey(r.first, r.second) === state.selected);
     if (!row) return;
     const d = state.current.data.decisions.find(v => pairKey(v.first, v.second) === state.selected && v.as_of === state.current.data.as_of) || {};
-    showEditor(`${row.first_name} ↔ ${row.second_name}`, `<div class="field full"><p>Vizsgálati nap: <strong>${esc(state.current.data.as_of)}</strong></p><p class="small muted">A jogi minősítéshez a releváns jogalapot és a megerősített tényállást rögzítsd.</p><p><strong>Miért szükséges?</strong> ${esc(row.reason)} ${esc(row.signals.join(" "))}</p><p><strong>Hiányok:</strong> ${esc(row.missing.join(" ") || "A minősítés, indok és forrás megerősítése szükséges.")}</p></div>${select('Jogi minősítés', 'result', d.result || 'undetermined', Object.entries(labels))}${select('Ha nem dönthető el: következő lépés', 'stage', d.stage || 'unreviewed', [['unreviewed', 'Iratellenőrzésre vár'], ['awaiting_declaration', 'Nyilatkozatra vár'], ['missing_data', 'Hiányzó adat'], ['management_review', 'Közös vezetés – irányítás tisztázandó']])}${select('Jogalap csoportja – telephelyi továbbvezetéshez','legal_ground',d.legal_ground || 'unspecified',[['unspecified','Nincs besorolva'],['abc','Tao. 4. § 23. a)–c)'],['management','Ügyvezetés: f)'],['pe','Telephely: d)–e)'],['other','Más jogalap']])}${area('Jogalap – pontos rendelkezés / alpont', 'basis', d.basis)}${area('Szakértői indokolás', 'reason', d.reason)}${evidenceFields(d.evidence)}${area('Alkalmazott feltételezés', 'assumptions', d.assumptions)}${area('Hiányzó tény / következő lépés', 'missing', d.missing)}<div class="field full">${check('A rögzített döntés tényállását, indokát és forrását megerősítettem.', 'confirmed', d.confirmed)}${check('A negatív minősítéshez minden releváns jogalapot ellenőriztem a vállalt körben.', 'relevant_grounds_reviewed', d.relevant_grounds_reviewed)}</div>`, async p => {
+    showEditor(`${row.first_name} ↔ ${row.second_name}`, `<div class="field full"><p>Vizsgálati nap: <strong>${esc(state.current.data.as_of)}</strong></p><p class="small muted">A jogi minősítéshez a releváns jogalapot és a megerősített tényállást rögzítsd.</p><p><strong>Miért szükséges?</strong> ${esc(row.reason)} ${esc(row.signals.join(" "))}</p><p><strong>Hiányok:</strong> ${esc(row.missing.join(" ") || "A minősítés, indok és forrás megerősítése szükséges.")}</p></div>${select('Jogi minősítés', 'result', d.result || '', [['','Válassz minősítést…'],...Object.entries(labels)])}${select('Ha nem dönthető el: következő lépés', 'stage', d.stage || 'unreviewed', [['unreviewed', 'Iratellenőrzésre vár'], ['awaiting_declaration', 'Nyilatkozatra vár'], ['missing_data', 'Hiányzó adat'], ['management_review', 'Közös vezetés – irányítás tisztázandó']])}${select('Jogalap csoportja – telephelyi továbbvezetéshez','legal_ground',d.legal_ground || 'unspecified',[['unspecified','Nincs besorolva'],['abc','a)–c): tulajdonosi / szavazati / közös irányítás'],['management','f): ügyvezetés révén döntő befolyás'],['pe','d)–e): adózó és Tao-telephely kapcsolata'],['other','Más jogalap']])}${area('Jogalap – pontos rendelkezés / alpont', 'basis', d.basis)}${area('Szakértői indokolás', 'reason', d.reason)}${evidenceFields(d.evidence)}${area('Alkalmazott feltételezés', 'assumptions', d.assumptions)}${area('Hiányzó tény / következő lépés', 'missing', d.missing)}<div class="field full">${check('A rögzített döntés tényállását, indokát és forrását megerősítettem.', 'confirmed', d.confirmed)}${check('A negatív minősítéshez minden releváns jogalapot ellenőriztem a vállalt körben.', 'relevant_grounds_reviewed', d.relevant_grounds_reviewed)}</div>`, async p => {
       const next = copy();
-      const value = {first: row.first, second: row.second, as_of: next.as_of, result: p.result, stage: p.stage,
+      const value = {first: row.first, second: row.second, as_of: next.as_of, result: p.result || 'undetermined', stage: p.stage,
         legal_ground:p.legal_ground,basis: p.basis, reason: p.reason, evidence: evidenceInput(p), assumptions: p.assumptions, missing: p.missing,
         confirmed: Boolean(p.confirmed), relevant_grounds_reviewed: Boolean(p.relevant_grounds_reviewed)};
       const index = next.decisions.findIndex(v => pairKey(v.first, v.second) === state.selected && v.as_of === next.as_of);
       if (index < 0) next.decisions.push(value); else next.decisions[index] = value;
       await save(next);
     });
+    const form=editor.querySelector('form');form.dataset.decision='true';
+    const primary=form.querySelector('[type=submit]');primary.dataset.saveMode='reviewed';
+    primary.before(Object.assign(document.createElement('button'),{type:'submit',name:'save_mode',value:'draft',textContent:'Mentés tervezetként',formNoValidate:true}));
+    decisionRequirements();
   }
 
   async function demo() {
@@ -485,6 +536,8 @@
           break;
         }
         case 'settings': await settings(); break;
+        case 'legal-reference': legalEditor(node.dataset.id,node.dataset.candidate);break;
+        case 'pdf-tools': showEditor('PDF-beolvasás és PDF-export',Opinion.tools(await api('/tools/pdf-status')),async()=>{});editor.querySelector('[type=submit]').textContent='Bezárás';break;
         case 'company': companyEditor(node.dataset.id); break;
         case 'pe': peEditor(node.dataset.id); break;
         case 'trust': trustEditor(node.dataset.id); break;
@@ -567,12 +620,19 @@
   });
   editor.addEventListener('change', toggleVotingFields);
   editor.addEventListener('submit', async event => {
-    event.preventDefault();
+    event.preventDefault();if(state.busy)return;
     const submit = editor.querySelector('[type=submit]');
-    submit.disabled = true;state.busy=true;
-    try {await showEditor.submit(formObject(event.target)); editor.close();}
+    submit.disabled = true;state.busy=true;event.target.inert=true;
+    try {
+      const values=formObject(event.target);
+      if(event.target.dataset.decision==='true') {
+        const draft=event.submitter?.value==='draft';values.confirmed=draft ? '' : 'on';
+        if(draft)values.result ||= 'undetermined';
+      }
+      await showEditor.submit(values); editor.close();
+    }
     catch (error) {const node = editor.querySelector('#editor-error'); node.textContent = error.message; node.hidden = false; node.scrollIntoView({block: 'nearest'});}
-    finally {submit.disabled = false;state.busy=false;}
+    finally {submit.disabled = false;state.busy=false;event.target.inert=false;}
   });
   editor.addEventListener('cancel',event=>{if(state.busy || (state.editorDirty && !confirm('Bezárod a még nem mentett módosításokat?'))) event.preventDefault();});
   editor.addEventListener('close',()=>{state.editorDirty=false;});
@@ -587,6 +647,7 @@
     else if(editor.querySelector('[name=business_control]')) {impact.hidden=false;impact.textContent='A közös ügyvezető önmagában nem elegendő. Igazold a tényleges döntő befolyást az üzleti és pénzügyi politikában is. Mentés után látszik, mely cégpárnál keletkezett jelzés vagy maradt hiány.';}
   }
   editor.addEventListener('input',explainEdit);editor.addEventListener('change',explainEdit);
+  editor.addEventListener('change',()=>{updateSelectHelp();decisionRequirements();});
   window.addEventListener('beforeunload',event=>{if(state.editorDirty || state.graphDirty){event.preventDefault();event.returnValue='';}});
 
   async function boot() {

@@ -13,6 +13,27 @@ Percent = Decimal
 Category = Literal['micro', 'small', 'medium', 'large']
 
 
+class LegalReference(Model):
+    id: str = Field(min_length=1, max_length=80)
+    case_number: str = Field(min_length=1, max_length=120)
+    title: str = Field(default='', max_length=500)
+    url: str = Field(default='', max_length=2000)
+    source: str = Field(default='', max_length=3000)
+    relevance: str = Field(default='', max_length=5000)
+    checked: bool = False
+
+    @model_validator(mode='after')
+    def valid_reference(self):
+        from urllib.parse import urlsplit
+        if self.url:
+            parsed=urlsplit(self.url)
+            if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.username or parsed.password:
+                raise ValueError('A jogforrás linkje érvényes HTTP(S) cím legyen.')
+        if self.checked and not ((self.source or self.url) and self.relevance):
+            raise ValueError('Alkalmazott bírósági döntéshez forrás és ügyre vonatkozó indok szükséges.')
+        return self
+
+
 class Company(Model):
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=200)
@@ -183,11 +204,18 @@ class Assessment(Model):
     public_review: PublicReview = Field(default_factory=PublicReview)
     assumptions: str = Field(default='', max_length=10000)
     conclusion_notes: str = Field(default='', max_length=10000)
+    market_analysis: str = Field(default='', max_length=10000)
+    report_issuer: str = Field(default='', max_length=300)
+    report_signatory: str = Field(default='', max_length=200)
+    report_place: str = Field(default='', max_length=200)
+    legal_references: list[LegalReference] = Field(default_factory=list, max_length=100)
     graph_positions: dict[str, GraphPosition] = Field(default_factory=dict, max_length=750)
 
     @model_validator(mode='after')
     def references(self):
         ids = [c.id for c in self.companies] + [p.id for p in self.persons]
+        if len({r.id for r in self.legal_references}) != len(self.legal_references):
+            raise ValueError('A jogforrások azonosítói nem ismétlődhetnek.')
         if len(ids) != len(set(ids)):
             raise ValueError('A szereplők azonosítói nem lehetnek ismétlődők.')
         if not set(self.graph_positions) <= set(ids):

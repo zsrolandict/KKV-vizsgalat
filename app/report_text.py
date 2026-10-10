@@ -54,6 +54,7 @@ def annual_reason(year):
 
 
 def report_summary(data, calculation, metadata):
+    from .opinion_support import market_paragraphs, assumptions
     root = next(c for c in data.companies if c.id == data.root)
     draft = not metadata['approved']
     ready = calculation['ready'] and not calculation['blockers']
@@ -106,4 +107,6 @@ def report_summary(data, calculation, metadata):
             'opening': opening, 'conclusion': conclusion, 'relationships': relationships,
             'annuals': annuals, 'history': history, 'sensitivity': sensitivity,
             'transfer_pricing': calculation['transfer_pricing'], 'blockers': calculation['blockers'],
+            'market_analysis': market_paragraphs(data), 'assumptions': assumptions(data),
+            'legal_references': [r.model_dump(mode='json') for r in data.legal_references],
             'purpose': data.purpose, 'as_of': data.as_of.isoformat(), 'notes': data.conclusion_notes}

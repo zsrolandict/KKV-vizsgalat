@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from .models import Model, Person, GraphPosition
+from .models import Model, Person, GraphPosition, LegalReference
 
 
 class Evidence(Model):
@@ -255,6 +255,11 @@ class TaoAssessment(Model):
     management_facts: list[ManagementFact] = Field(default_factory=list, max_length=1000)
     establishment_facts: list[EstablishmentFact] = Field(default_factory=list, max_length=300)
     trust_facts: list[TrustFact] = Field(default_factory=list, max_length=300)
+    market_analysis: str = Field(default='', max_length=10000)
+    report_issuer: str = Field(default='', max_length=300)
+    report_signatory: str = Field(default='', max_length=200)
+    report_place: str = Field(default='', max_length=200)
+    legal_references: list[LegalReference] = Field(default_factory=list, max_length=100)
     graph_positions: dict[str, GraphPosition] = Field(default_factory=dict, max_length=310)
     decisions: list[PairDecision] = Field(default_factory=list, max_length=1770)
 
@@ -262,6 +267,8 @@ class TaoAssessment(Model):
     def validate_references(self):
         cids = {c.id for c in self.companies}
         ids = [c.id for c in self.companies] + [p.id for p in self.persons]
+        if len({r.id for r in self.legal_references}) != len(self.legal_references):
+            raise ValueError('A jogforrások azonosítói nem ismétlődhetnek.')
         if len(ids) != len(set(ids)):
             raise ValueError('A szereplők azonosítói nem ismétlődhetnek.')
         if any(key not in ids for key in self.graph_positions):

@@ -3,7 +3,6 @@ import hmac
 import json
 import os
 import secrets
-import subprocess
 import tempfile
 import time
 from collections import defaultdict, deque
@@ -21,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from .tool_paths import configured_tool
+from .pdf_export import convert as convert_pdf, PDFExportError, status as pdf_status
 from . import db
 from .demo import demonstration
 from .engine import calculate, RULE_VERSION
@@ -454,17 +453,16 @@ def report(cid:str,kind:str,version:int|None=None,u=Depends(user)):
     if kind=='pdf':
         path=exports/(stem+'.pdf')
         if not path.exists():
-            try:
-                with tempfile.TemporaryDirectory(dir=exports) as folder:
-                    subprocess.run([configured_tool('soffice') or 'soffice',f'-env:UserInstallation={Path(folder).as_uri()}/profile','--headless','--convert-to','pdf','--outdir',folder,str(docpath)],
-                        check=True,timeout=60,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-                    pdf=Path(folder)/(stem+'.pdf')
-                    if not pdf.exists():raise RuntimeError('Nem keletkezett PDF.')
-                    os.replace(pdf,path)
-            except (OSError,subprocess.SubprocessError,RuntimeError):
-                raise HTTPException(503,'A PDF-konverzió nem sikerült. A Word-export elérhető; ellenőrizze a LibreOffice telepítését.')
+            try: convert_pdf(docpath, path)
+            except PDFExportError as exc: raise HTTPException(503, str(exc)) from None
+
     with db.connection() as con:db.audit(con,cid,u['id'],'report_downloaded',f'{v}. verzió, {kind}')
     return FileResponse(path,filename=f'KKV_allasfoglalas_v{v}.{kind}',media_type='application/pdf' if kind=='pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+
+@app.get('/api/tools/pdf-status')
+def pdf_tools(u=Depends(staff)):
+    return pdf_status()
 
 
 @app.get('/api/mnb')

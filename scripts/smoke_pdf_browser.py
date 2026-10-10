@@ -247,7 +247,7 @@ def main():
                     assert 'Tao-telephelyek' in book.sheetnames and 'BVK-tények' in book.sheetnames
                     report=context.request.get(URL+'/api/tao/cases/'+special_id+'/report/docx')
                     text='\n'.join(p.text for p in Document(BytesIO(report.body())).paragraphs)
-                    assert 'Telephelyi tény:' in text and 'BVK: Teszt kezelt vagyon' in text
+                    assert 'Telephelyi tény:' in text and 'Bizalmi vagyonkezelési tényállás: Teszt kezelt vagyon' in text
                     assert not errors,errors
                     print(json.dumps({'files':files,'modules':['tao','kkv'],'viewports':[360,390,768,1366,1440],'drag_drop':True,'edited_name':True,'source_staff_not_annual':True,'xlsx_download':True,'family_edit':True,'family_source_required':True,'family_exports':True,'control_edit':True,'management_conditions':True,'control_exports':True,'existing_case_merge':True,'bvk_editor':True,'pe_editor':True,'special_exports':True,'browser_errors':errors}))
                     browser.close()
