@@ -9,6 +9,7 @@ function calculationCompleteness(calc,year){
   return `<div class="banner amber" id="preliminary-calculation">${icon('alert')}<div><strong>Előzetes számítás · ${checks.length} rendezendő kérdés</strong><p>${year?.complete?'A számszerű adatok rendelkezésre állnak, de a jelzett forrásokat és kapcsolati döntéseket még ellenőrizni kell.':'Az ismert és beszámítható adatok részösszege látható. A hiányzó adatokat nem tekintjük nullának; végleges méretkategória még nem állapítható meg.'}</p><ul>${checks.slice(0,3).map(b=>`<li>${esc(b.title||b.message)}</li>`).join('')}</ul>${button('Hiányok és teendők megnyitása','tab','small','data-tab="review"','arrow')}</div></div>`;
 }
 
+function reviewChecks(blockers=S.calc.blockers){return S.reviewScope==='all'?blockers:blockers.filter(b=>!b.year||b.year===S.year);}
 function groupedChecks(blockers=S.calc.blockers){
   const groups=new Map();
   blockers.forEach((b,index)=>{
@@ -28,8 +29,8 @@ function checkCards(blockers=S.calc.blockers){
   </article>`).join('');
 }
 function checkSummary(){
-  const open=groupedChecks().length;
-  return `<div class="review-summary"><strong>${open?open+' rendezendő kérdés':'Minden adatellenőrzés rendezett'}</strong><p>A kérdések az érintett évekkel együtt jelennek meg. A Rendezés gomb közvetlenül a szükséges adathoz visz. Mentéskor újraellenőrizzük a tényeket; a mentés nem jelent automatikus szakértői megerősítést.</p></div>`;
+  const open=groupedChecks(reviewChecks()).length;
+  return `<div class="review-summary"><strong>${open?open+' rendezendő kérdés':'Minden adatellenőrzés rendezett'}</strong><p>A számláló az itt megjelenített teendőket számolja. Az adott évre ellenőrzött döntés ebből az évből eltűnik; másik évben külön igazolás szükséges. A Rendezés gomb közvetlenül a szükséges adathoz visz. Mentéskor újraellenőrizzük a tényeket; a mentés nem jelent automatikus szakértői megerősítést.</p></div>`;
 }
 function caseFeedback(){
   const last=S.lastSave;
@@ -37,7 +38,7 @@ function caseFeedback(){
   return `<section class="save-feedback" role="status"><div>${icon('check')}<strong>${esc(last.text)}</strong></div>${last.changes.length?`<details><summary>Mi változott a számításban? (${last.changes.length})</summary><ul>${last.changes.map(t=>`<li>${esc(t)}</li>`).join('')}</ul></details>`:''}${S.calc.blockers.length?button('Fennmaradó teendők','tab','small','data-tab="review"'):''}</section>`;
 }
 function saveFeedback(before,after){
-  const old=groupedChecks(before.blockers),now=groupedChecks(after.blockers);
+  const old=groupedChecks(reviewChecks(before.blockers)),now=groupedChecks(reviewChecks(after.blockers));
   const keys=now.map(b=>[b.code,b.target].join('|'));
   const resolved=old.filter(b=>!keys.includes([b.code,b.target].join('|'))).length;
   const changes=[];
@@ -49,7 +50,7 @@ function saveFeedback(before,after){
     });
     if(prev&&Object.keys(y.totals).some(k=>y.totals[k]!==prev.totals[k]))changes.push(`${y.year} · Összesen: ${fmt(y.totals.employees)} fő, ${fmt(scale(y.totals.turnover,-3))} ezer Ft árbevétel, ${fmt(scale(y.totals.balance,-3))} ezer Ft mérlegfőösszeg.`);
   });
-  return {text:`Mentve és újraszámítva. ${resolved?resolved+' kérdés rendeződött. ':''}${now.length?now.length+' kérdéshez még adat vagy döntés szükséges.':'Minden adatellenőrzés rendezett.'}`,changes};
+  return {text:`Mentve és újraszámítva. ${S.reviewScope==='all'?'Minden vizsgált év:':S.year+'. év:'} ${resolved?resolved+' kérdés rendeződött. ':''}${now.length?now.length+' kérdéshez még adat vagy döntés szükséges.':'Minden adatellenőrzés rendezett.'}`,changes};
 }
 function openCheck(index,year){
   const b=S.calc.blockers[index];if(!b)return;
@@ -74,8 +75,9 @@ function companyState(cid){
   if(!row)return 'Nem szerepel az adott hálóidőpontban';
   return `${S.year} · ${relationLabels[row.relation]} · ${fmt(row.percent)}% beszámítás${S.calc.blockers.some(b=>b.year===S.year&&(b.target===cid||S.data.decisions.some(d=>d.id===b.target&&(d.first===cid||d.second===cid))))?' · előzetes':''}`;
 }
+function decisionConfirmed(d,year){return !!d.confirmed&&(d.confirmed_years==null||d.confirmed_years.includes(Number(year)));}
 function decisionNeeds(d){
-  return [d.relation==='unresolved'?'kapcsolati minősítés':null,!d.reason?'indoklás':null,!d.source?'igazoló forrás':null,!d.confirmed?'ellenőrzés megerősítése':null,d.basis==='persons'&&!d.acting_together?'közös fellépés ténye':null,d.basis==='persons'&&!d.market?'piaci kapcsolat indoka':null].filter(Boolean);
+  return [d.relation==='unresolved'?'kapcsolati minősítés':null,!d.reason?'indoklás':null,!d.source?'igazoló forrás':null,!decisionConfirmed(d,S.year)?S.year+'. évi ellenőrzés megerősítése':null,d.basis==='persons'&&!d.acting_together?'közös fellépés ténye':null,d.basis==='persons'&&!d.market?'piaci kapcsolat indoka':null].filter(Boolean);
 }
 function relationshipEvidence(first,second){
   const day=structureDay();

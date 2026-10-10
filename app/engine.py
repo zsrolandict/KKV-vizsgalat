@@ -172,8 +172,9 @@ def _calculate(data: Assessment, scenario='base'):
         for d in data.decisions:
             if not active(d, structure_day):
                 continue
-            if not d.confirmed or not d.reason or not d.source:
-                missing = [label for absent, label in [(not d.reason, 'indoklás'), (not d.source, 'igazoló forrás'), (not d.confirmed, 'ellenőrzés megerősítése')] if absent]
+            confirmed = d.confirmed and (d.confirmed_years is None or year in d.confirmed_years)
+            if not confirmed or not d.reason or not d.source:
+                missing = [label for absent, label in [(not d.reason, 'indoklás'), (not d.source, 'igazoló forrás'), (not confirmed, 'ellenőrzés megerősítése')] if absent]
                 issue('decision_review', f'{companies[d.first].name} – {companies[d.second].name}: hiányzik: {", ".join(missing)}.', year, d.id)
             if d.basis == 'persons' and (not d.market or not d.acting_together):
                 issue('persons_market', f'{companies[d.second].name}: a közös fellépés és a piaci kapcsolat indoklása szükséges.', year, d.id)

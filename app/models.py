@@ -73,6 +73,7 @@ class Decision(Model):
     acting_together: str = Field(default='', max_length=2000)
     source: str = Field(default='', max_length=1000)
     confirmed: bool = False
+    confirmed_years: list[int] | None = Field(default=None, max_length=10)
     start: date | None = None
     end: date | None = None
 
@@ -203,6 +204,8 @@ class Assessment(Model):
         for d in self.decisions:
             if d.first not in cids or d.second not in cids:
                 raise ValueError('Kapcsolati döntés ismeretlen vállalkozásra mutat.')
+            if d.confirmed_years is not None and (len(set(d.confirmed_years)) != len(d.confirmed_years) or not set(d.confirmed_years) <= set(self.years)):
+                raise ValueError('A kapcsolati ellenőrzés éve csak egyszer, a vizsgált évek között szerepelhet.')
         keys = [(f.company, f.year) for f in self.financials]
         if len(keys) != len(set(keys)):
             raise ValueError('Egy vállalkozás és év pénzügyi adata csak egyszer szerepelhet.')
