@@ -37,3 +37,11 @@ Ellenőrzendő változások:
 
 A Windows-indító ebben a Linux fejlesztőkörnyezetben nem futtatható;
 az alkalmazás számítása és böngészős munkafolyamata itt ellenőrizve lett.
+
+Ha a pip._internal.utils modul hiányzik:
+A régi .venv hiányos vagy másolt környezet lehet. A frissített indító ellenőrzi
+és átnevezve megőrzi a hibás környezetet, majd új környezetet készít.
+A data mappához nem nyúl. Túl hosszú mappaútnál előbb rövidebb helyre kell
+másolni a programot, például C:\Users\zsidir\KKV-app alá, a .venv kihagyásával.
+A ZIP-ben lévő programkönyvtár tartalmát másold, ne ismételten egymásba a
+teljes ZIP-könyvtárakat. A data, app és INDITAS_WINDOWS.bat egy szinten legyen.
